@@ -13,7 +13,8 @@ A locally-run web application for performing a one-time bulk migration of data b
 
 ## Goals
 
-- Migrate product hierarchy, notes, insights, companies, and releases from source to destination workspace
+- Migrate product hierarchy, notes, companies, and releases from source to destination workspace
+- Insights are auto-generated server-side by Productboard when notes are linked to features — they are not directly migrated
 - Allow the user to filter features and subfeatures by status before migrating
 - Allow the user to select which custom fields to carry over
 - Provide a live progress dashboard with per-step visibility
@@ -52,7 +53,7 @@ A locally-run web application for performing a one-time bulk migration of data b
 | Subfeature | Subfeature | Filtered by user-selected statuses |
 | Release | Release | Standalone entity, linked to migrated features/subfeatures |
 | Note | Note | Linked to destination features + destination users/companies |
-| Insight | Insight | Created automatically as a byproduct of linking notes to features |
+| Insight | Insight | Auto-generated server-side by Productboard when notes are linked to features — not queryable or directly migratable via API |
 | Company | Company | Customer companies discovered via notes/insights |
 | User (customer) | User (customer) | Customer users discovered via notes/insights |
 | Member (workspace) | Member (workspace) | Read-only — matched by email, not created |
@@ -69,10 +70,10 @@ Steps run sequentially. Each step must complete before the next begins.
 4. **Features** — Fetch source features filtered by user-selected statuses. Create each under its parent destination Component. Apply selected custom fields. Save ID map.
 5. **Subfeatures** — Fetch source subfeatures filtered by user-selected statuses. Create each under its parent destination Feature. Apply selected custom fields. Save ID map.
 6. **Releases** — Fetch source releases. Create as standalone entities in the destination. Link to migrated features/subfeatures via relationship API. Save ID map.
-7. **Discover Notes & Insights** — Query all notes/insights linked to migrated features and subfeatures. No writes — discovery only. Extract unique companies and users from relationships.
+7. **Discover Notes** — For each migrated feature and subfeature, call `POST /v2/notes/search` on the source workspace with filter `relationships.link.ids` set to the source feature/subfeature IDs. Paginate through all results. No writes — discovery only. Extract and deduplicate companies and users from note relationships only. (Insights cannot be queried via API — they are auto-generated server-side by Productboard when notes are linked to features in Step 10.)
 8. **Companies** — Create discovered customer companies in the destination. Save ID map.
 9. **Users (customers)** — Create discovered customer users in the destination. Save ID map.
-10. **Notes** — Create notes in the destination, linking to destination features (via ID map) and destination users/companies (via ID map). Insights are created automatically by Productboard as a byproduct.
+10. **Notes** — Create notes in the destination, linking to destination features/subfeatures (via ID map) and destination users/companies (via ID map). For `owner` and `creator` fields: match by email to existing destination workspace members; if no match, omit the field and log a warning. Insights are auto-generated server-side by Productboard when notes are linked to features.
 
 ---
 
@@ -215,6 +216,7 @@ All Productboard API calls go through a single `client.ts` wrapper that handles:
 | Step-level crash (network, bad key) | Mark step as `failed` in state. Halt migration. User fixes issue and resumes. |
 | Member not found in destination | Log as warning (not error). Create entity without owner assigned. |
 | Note linked to unmigrated feature | Skip note, log as warning. |
+| Note owner/creator not found in destination | Log as warning. Create note without owner/creator field. |
 
 ---
 
@@ -245,3 +247,4 @@ All Productboard API calls go through a single `client.ts` wrapper that handles:
 - `opportunityNote` type is excluded — cannot be created via API
 - The app runs locally only; no deployment, no auth layer needed
 - Both API keys are stored in `migration-state.json` on disk — the user is responsible for keeping this file secure
+- Insights cannot be queried or migrated directly via the Productboard API — they are auto-generated server-side when notes are linked to features
