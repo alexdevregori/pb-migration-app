@@ -68,9 +68,9 @@ export class ProductboardClient {
     let nextUrl: string | null = null
 
     do {
-      const response = await this.request<PBListResponse<T>>(nextUrl ?? url)
-      results.push(...response.data)
-      nextUrl = response.links?.next ?? null
+      const page: PBListResponse<T> = await this.request<PBListResponse<T>>(nextUrl ?? url)
+      results.push(...page.data)
+      nextUrl = page.links?.next ?? null
     } while (nextUrl)
 
     return results
