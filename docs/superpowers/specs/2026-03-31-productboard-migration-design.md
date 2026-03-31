@@ -16,6 +16,7 @@ A locally-run web application for performing a one-time bulk migration of data b
 - Migrate product hierarchy, notes, companies, and releases from source to destination workspace
 - Insights are auto-generated server-side by Productboard when notes are linked to features — they are not directly migrated
 - Allow the user to filter features and subfeatures by status before migrating
+- Allow the user to filter releases by release group before migrating
 - Allow the user to select which custom fields to carry over
 - Provide a live progress dashboard with per-step visibility
 - Support resume if the migration crashes mid-run
@@ -51,7 +52,8 @@ A locally-run web application for performing a one-time bulk migration of data b
 | Component | Component | Created under the destination component that represents its source parent product |
 | Feature | Feature | Filtered by user-selected statuses |
 | Subfeature | Subfeature | Filtered by user-selected statuses |
-| Release | Release | Standalone entity, linked to migrated features/subfeatures |
+| Release Group | Release Group | Only user-selected release groups are migrated |
+| Release | Release | Only releases belonging to selected release groups; linked to migrated features/subfeatures |
 | Note | Note | Linked to destination features + destination users/companies |
 | Insight | Insight | Auto-generated server-side by Productboard when notes are linked to features — not queryable or directly migratable via API |
 | Company | Company | Customer companies discovered via notes/insights |
@@ -69,11 +71,12 @@ Steps run sequentially. Each step must complete before the next begins.
 3. **Components → Components** — Fetch all source components. Create each as a Component under its parent (now a destination Component from step 2). Save ID map.
 4. **Features** — Fetch source features filtered by user-selected statuses. Create each under its parent destination Component. Apply selected custom fields. Save ID map.
 5. **Subfeatures** — Fetch source subfeatures filtered by user-selected statuses. Create each under its parent destination Feature. Apply selected custom fields. Save ID map.
-6. **Releases** — Fetch source releases. Create as standalone entities in the destination. Link to migrated features/subfeatures via relationship API. Save ID map.
-7. **Discover Notes** — For each migrated feature and subfeature, call `POST /v2/notes/search` on the source workspace with filter `relationships.link.ids` set to the source feature/subfeature IDs. Paginate through all results. No writes — discovery only. Extract and deduplicate companies and users from note relationships only. (Insights cannot be queried via API — they are auto-generated server-side by Productboard when notes are linked to features in Step 10.)
-8. **Companies** — Create discovered customer companies in the destination. Save ID map.
-9. **Users (customers)** — Create discovered customer users in the destination. Save ID map.
-10. **Notes** — Create notes in the destination, linking to destination features/subfeatures (via ID map) and destination users/companies (via ID map). For `owner` and `creator` fields: match by email to existing destination workspace members; if no match, omit the field and log a warning. Insights are auto-generated server-side by Productboard when notes are linked to features.
+6. **Release Groups** — Fetch source release groups. Create only the user-selected ones in the destination. Save ID map.
+7. **Releases** — Fetch source releases whose parent release group is in the selected set. Create each in the destination under its destination release group. Link to migrated features/subfeatures via relationship API. Save ID map.
+8. **Discover Notes** — For each migrated feature and subfeature, call `POST /v2/notes/search` on the source workspace with filter `relationships.link.ids` set to the source feature/subfeature IDs. Paginate through all results. No writes — discovery only. Extract and deduplicate companies and users from note relationships only. (Insights cannot be queried via API — they are auto-generated server-side by Productboard when notes are linked to features in Step 11.)
+9. **Companies** — Create discovered customer companies in the destination. Save ID map.
+10. **Users (customers)** — Create discovered customer users in the destination. Save ID map.
+11. **Notes** — Create notes in the destination, linking to destination features/subfeatures (via ID map) and destination users/companies (via ID map). For `owner` and `creator` fields: match by email to existing destination workspace members; if no match, omit the field and log a warning. Insights are auto-generated server-side by Productboard when notes are linked to features.
 
 ---
 
@@ -103,6 +106,7 @@ migration-app/
 │   │   │   ├── components.ts
 │   │   │   ├── features.ts
 │   │   │   ├── subfeatures.ts
+│   │   │   ├── release-groups.ts
 │   │   │   ├── releases.ts
 │   │   │   ├── notes.ts
 │   │   │   ├── companies.ts
@@ -111,7 +115,8 @@ migration-app/
 │   │   └── progress.ts                   # SSE event emitter helpers
 │   └── components/
 │       ├── ConfigForm.tsx                # API key inputs + Connect button
-│       ├── StatusSelector.tsx            # Checkbox list of source statuses
+│       ├── StatusSelector.tsx            # Checkbox list of source feature/subfeature statuses
+│       ├── ReleaseGroupSelector.tsx      # Checkbox list of source release groups
 │       ├── FieldSelector.tsx             # Checkbox list of source custom fields
 │       └── MigrationDashboard.tsx        # Per-step progress rows + error display
 ├── migration-state.json                  # Auto-created, git-ignored
@@ -132,6 +137,7 @@ migration-app/
 
 ### Panel 2: Migration Settings (unlocked after connect)
 - **Status selector** — checkboxes populated from source workspace statuses (fetched via `/v2/entities/configurations/feature`). User selects which statuses to include for features and subfeatures.
+- **Release Group selector** — checkboxes of all release groups fetched from source workspace (`GET /v2/entities?type[]=releaseGroup`). User selects which release groups (and their releases) to migrate.
 - **Field selector** — checkboxes of all custom fields on features/subfeatures from the source workspace config. User selects which to carry over.
 - **"Start Migration"** button
 - **"Resume"** button (shown only if a prior partial run exists in `migration-state.json`)
@@ -153,6 +159,7 @@ migration-app/
     "sourceApiKey": "...",
     "destinationApiKey": "...",
     "selectedStatuses": ["In Progress", "Planned"],
+    "selectedReleaseGroups": ["release-group-uuid-1", "release-group-uuid-2"],
     "selectedFields": ["field-uuid-1", "field-uuid-2"]
   },
   "migrationProductId": "dest-uuid",
@@ -161,6 +168,7 @@ migration-app/
     "components": {},
     "features": {},
     "subfeatures": {},
+    "releaseGroups": {},
     "releases": {},
     "companies": {},
     "users": {},
@@ -172,6 +180,7 @@ migration-app/
     "components": "pending",
     "features": "pending",
     "subfeatures": "pending",
+    "releaseGroups": "pending",
     "releases": "pending",
     "discoverNotes": "pending",
     "companies": "pending",
@@ -226,9 +235,10 @@ All Productboard API calls go through a single `client.ts` wrapper that handles:
 |---|---|
 | Validate API key / fetch config | `GET /v2/entities/configurations/{type}` |
 | Fetch statuses for features | `GET /v2/entities/fields/{id}/values` |
-| List entities (all types) | `GET /v2/entities?type={type}` |
+| List entities (all types) | `GET /v2/entities?type[]={type}` |
+| List release groups | `GET /v2/entities?type[]=releaseGroup` |
 | Search entities by status | `POST /v2/entities/search` |
-| Create entity | `POST /v2/entities` |
+| Create entity (all types incl. releaseGroup, release) | `POST /v2/entities` |
 | Set field value | `PATCH /v2/entities/{id}` |
 | Create relationship | `POST /v2/entities/{id}/relationships` |
 | List notes | `GET /v2/notes` |
