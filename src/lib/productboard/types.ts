@@ -126,6 +126,10 @@ export interface MigrationConfig {
   selectedStatuses: string[]
   selectedReleaseGroups: string[]
   selectedFields: string[]
+  // source status name → destination status ID (optional — omitting skips status migration)
+  statusMapping?: Record<string, string>
+  // source field UUID → destination field UUID (optional — falls back to same UUID)
+  fieldMapping?: Record<string, string>
 }
 
 export interface MigrationState {
@@ -166,7 +170,11 @@ export interface ProgressEvent {
 // ── Workspace info (returned to UI) ────────────────────────────────────────
 
 export interface WorkspaceInfo {
+  // Source workspace
   statuses: PBStatus[]
   releaseGroups: PBReleaseGroup[]
   customFields: PBFieldConfig[]
+  // Destination workspace (used for mapping)
+  destStatuses: PBStatus[]
+  destCustomFields: PBFieldConfig[]
 }

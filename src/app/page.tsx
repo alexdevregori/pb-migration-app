@@ -6,9 +6,11 @@ import { StatusSelector } from '@/components/StatusSelector'
 import { ReleaseGroupSelector } from '@/components/ReleaseGroupSelector'
 import { FieldSelector } from '@/components/FieldSelector'
 import { MigrationDashboard } from '@/components/MigrationDashboard'
+import { MappingPanel, autoMap } from '@/components/MappingPanel'
+import type { MappingConfig } from '@/components/MappingPanel'
 import type { WorkspaceInfo, ProgressEvent, StepStatus } from '@/lib/productboard/types'
 
-type Panel = 'config' | 'settings' | 'running'
+type Panel = 'config' | 'settings' | 'mapping' | 'running'
 
 interface StepState {
   status: StepStatus
@@ -16,6 +18,13 @@ interface StepState {
   total?: number
   errors: string[]
 }
+
+const PANELS: { id: Panel; label: string }[] = [
+  { id: 'config',   label: 'Connect'   },
+  { id: 'settings', label: 'Configure' },
+  { id: 'mapping',  label: 'Map'       },
+  { id: 'running',  label: 'Migrate'   },
+]
 
 export default function Home() {
   const [panel, setPanel] = useState<Panel>('config')
@@ -29,6 +38,8 @@ export default function Home() {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
   const [selectedReleaseGroups, setSelectedReleaseGroups] = useState<string[]>([])
   const [selectedFields, setSelectedFields] = useState<string[]>([])
+
+  const [mapping, setMapping] = useState<MappingConfig>({ statusMapping: {}, fieldMapping: {} })
 
   const [progress, setProgress] = useState<Record<string, StepState>>({})
   const [hasPriorRun, setHasPriorRun] = useState(false)
@@ -70,6 +81,22 @@ export default function Home() {
     }
   }
 
+  // When the user advances from Configure → Map, auto-populate mappings by name
+  function handleAdvanceToMapping() {
+    if (!workspaceInfo) return
+    const autoMapped = autoMap(
+      selectedStatuses, selectedFields,
+      workspaceInfo.statuses, workspaceInfo.destStatuses,
+      workspaceInfo.customFields, workspaceInfo.destCustomFields,
+    )
+    // Preserve any manual mappings the user has already made
+    setMapping((prev) => ({
+      statusMapping: { ...autoMapped.statusMapping, ...prev.statusMapping },
+      fieldMapping:  { ...autoMapped.fieldMapping,  ...prev.fieldMapping  },
+    }))
+    setPanel('mapping')
+  }
+
   const handleProgress = useCallback((event: ProgressEvent) => {
     setProgress((prev) => {
       const current = prev[event.step] ?? { status: 'pending', errors: [] }
@@ -78,7 +105,7 @@ export default function Home() {
         [event.step]: {
           status: event.status,
           migrated: event.migrated ?? current.migrated,
-          total: event.total ?? current.total,
+          total:    event.total    ?? current.total,
           errors: event.error
             ? [...current.errors, `${event.error.name}: ${event.error.message}`]
             : current.errors,
@@ -113,11 +140,13 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceApiKey: sourceKey,
-          destinationApiKey: destKey,
+          sourceApiKey:          sourceKey,
+          destinationApiKey:     destKey,
           selectedStatuses,
           selectedReleaseGroups,
           selectedFields,
+          statusMapping:         mapping.statusMapping,
+          fieldMapping:          mapping.fieldMapping,
           resume,
         }),
       })
@@ -126,7 +155,7 @@ export default function Home() {
         throw new Error(err.error || 'Failed to start migration')
       }
     } catch (e: unknown) {
-      setPanel('settings')
+      setPanel('mapping')
       setConnectError(e instanceof Error ? e.message : 'Failed to start migration')
       setIsMigrating(false)
     }
@@ -134,7 +163,6 @@ export default function Home() {
 
   return (
     <main>
-      {/* Page header */}
       <div className="mb-6">
         <h1 style={{ color: '#1a1523', fontSize: '20px', fontWeight: 600, letterSpacing: '-0.02em' }}>
           Workspace Migration
@@ -144,25 +172,22 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Step breadcrumb */}
       <StepBreadcrumb current={panel} />
 
+      {/* ── Panel 1: Connect ── */}
       {panel === 'config' && (
         <Card>
           <CardHeader title="Connect workspaces" subtitle="Enter API keys for both workspaces to get started." />
-          <ConfigForm
-            onConnect={handleConnect}
-            loading={connectLoading}
-            error={connectError}
-          />
+          <ConfigForm onConnect={handleConnect} loading={connectLoading} error={connectError} />
         </Card>
       )}
 
+      {/* ── Panel 2: Configure ── */}
       {panel === 'settings' && workspaceInfo && (
-        <div className="space-y-4">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <Card>
             <CardHeader title="What to migrate" subtitle="Choose which features and releases to include." />
-            <div className="space-y-6">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <StatusSelector
                 statuses={workspaceInfo.statuses}
                 selected={selectedStatuses}
@@ -187,13 +212,47 @@ export default function Home() {
             </div>
           </Card>
 
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <PrimaryButton onClick={handleAdvanceToMapping} disabled={false}>
+              Next: Map statuses &amp; fields →
+            </PrimaryButton>
+            <span style={{ fontSize: '12px', color: '#a89bb8' }}>
+              {selectedStatuses.length} status{selectedStatuses.length !== 1 ? 'es' : ''} · {selectedReleaseGroups.length} release group{selectedReleaseGroups.length !== 1 ? 's' : ''} · {selectedFields.length} field{selectedFields.length !== 1 ? 's' : ''} selected
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Panel 3: Map ── */}
+      {panel === 'mapping' && workspaceInfo && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <Card>
+            <CardHeader
+              title="Map to destination"
+              subtitle="Drag destination statuses and fields onto their source counterparts. Exact name matches were auto-filled."
+            />
+            <MappingPanel
+              selectedStatuses={selectedStatuses}
+              selectedFields={selectedFields}
+              sourceStatuses={workspaceInfo.statuses}
+              destStatuses={workspaceInfo.destStatuses}
+              sourceFields={workspaceInfo.customFields}
+              destFields={workspaceInfo.destCustomFields}
+              mapping={mapping}
+              onChange={setMapping}
+            />
+          </Card>
+
           {connectError && (
             <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px', padding: '12px 16px' }}>
-              <p style={{ color: '#DC2626', fontSize: '13px' }}>{connectError}</p>
+              <p style={{ color: '#DC2626', fontSize: '13px', margin: 0 }}>{connectError}</p>
             </div>
           )}
 
-          <div className="flex gap-3">
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <SecondaryButton onClick={() => setPanel('settings')} disabled={isMigrating}>
+              ← Back
+            </SecondaryButton>
             <PrimaryButton onClick={() => startMigration(false)} disabled={isMigrating}>
               Start migration
             </PrimaryButton>
@@ -206,6 +265,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* ── Panel 4: Running ── */}
       {panel === 'running' && (
         <Card>
           <CardHeader title="Migration in progress" subtitle="Each step runs in order. Errors on individual items are logged but won't stop the migration." />
@@ -216,16 +276,11 @@ export default function Home() {
   )
 }
 
-// ── Local UI primitives ────────────────────────────────────────────────────
+// ── UI primitives ─────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{
-      background: '#ffffff',
-      border: '1px solid #e8e5ed',
-      borderRadius: '12px',
-      padding: '24px',
-    }}>
+    <div style={{ background: '#ffffff', border: '1px solid #e8e5ed', borderRadius: '12px', padding: '24px' }}>
       {children}
     </div>
   )
@@ -245,97 +300,62 @@ function Divider() {
 }
 
 function PrimaryButton({ children, onClick, disabled }: {
-  children: React.ReactNode
-  onClick: () => void
-  disabled?: boolean
+  children: React.ReactNode; onClick: () => void; disabled?: boolean
 }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        background: disabled ? '#c4afd8' : '#6B2FA0',
-        color: '#ffffff',
-        border: 'none',
-        borderRadius: '8px',
-        padding: '8px 18px',
-        fontSize: '14px',
-        fontWeight: 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'background 0.15s',
-      }}
-    >
+    <button onClick={onClick} disabled={disabled} style={{
+      background: disabled ? '#c4afd8' : '#6B2FA0', color: '#ffffff', border: 'none',
+      borderRadius: '8px', padding: '9px 20px', fontSize: '14px', fontWeight: 500,
+      cursor: disabled ? 'not-allowed' : 'pointer',
+    }}>
       {children}
     </button>
   )
 }
 
 function SecondaryButton({ children, onClick, disabled }: {
-  children: React.ReactNode
-  onClick: () => void
-  disabled?: boolean
+  children: React.ReactNode; onClick: () => void; disabled?: boolean
 }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        background: '#ffffff',
-        color: disabled ? '#c4afd8' : '#6B2FA0',
-        border: `1px solid ${disabled ? '#e8e5ed' : '#6B2FA0'}`,
-        borderRadius: '8px',
-        padding: '8px 18px',
-        fontSize: '14px',
-        fontWeight: 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'all 0.15s',
-      }}
-    >
+    <button onClick={onClick} disabled={disabled} style={{
+      background: '#ffffff', color: disabled ? '#c4afd8' : '#6B2FA0',
+      border: `1px solid ${disabled ? '#e8e5ed' : '#6B2FA0'}`,
+      borderRadius: '8px', padding: '9px 20px', fontSize: '14px', fontWeight: 500,
+      cursor: disabled ? 'not-allowed' : 'pointer',
+    }}>
       {children}
     </button>
   )
 }
 
 function StepBreadcrumb({ current }: { current: Panel }) {
-  const steps: { id: Panel; label: string }[] = [
-    { id: 'config', label: 'Connect' },
-    { id: 'settings', label: 'Configure' },
-    { id: 'running', label: 'Migrate' },
-  ]
-  const currentIndex = steps.findIndex((s) => s.id === current)
-
+  const currentIndex = PANELS.findIndex((p) => p.id === current)
   return (
-    <div className="flex items-center gap-2 mb-5">
-      {steps.map((step, i) => {
-        const done = i < currentIndex
+    <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginBottom: '20px' }}>
+      {PANELS.map((step, i) => {
+        const done   = i < currentIndex
         const active = i === currentIndex
         return (
-          <div key={step.id} className="flex items-center gap-2">
-            <div className="flex items-center gap-2">
+          <div key={step.id} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '6px',
+              background: active ? '#EDE4F5' : 'transparent' }}>
               <div style={{
-                width: '22px',
-                height: '22px',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '11px',
-                fontWeight: 600,
-                background: done ? '#6B2FA0' : active ? '#EDE4F5' : '#e8e5ed',
-                color: done ? '#ffffff' : active ? '#6B2FA0' : '#a89bb8',
+                width: '20px', height: '20px', borderRadius: '50%', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700,
+                background: done ? '#6B2FA0' : active ? '#6B2FA0' : '#e8e5ed',
+                color: done || active ? '#ffffff' : '#a89bb8',
               }}>
                 {done ? '✓' : i + 1}
               </div>
               <span style={{
-                fontSize: '13px',
-                fontWeight: active ? 600 : 400,
-                color: active ? '#1a1523' : done ? '#6B2FA0' : '#a89bb8',
+                fontSize: '13px', fontWeight: active ? 600 : 400,
+                color: active ? '#6B2FA0' : done ? '#6e6882' : '#a89bb8',
               }}>
                 {step.label}
               </span>
             </div>
-            {i < steps.length - 1 && (
-              <div style={{ width: '24px', height: '1px', background: '#e8e5ed' }} />
+            {i < PANELS.length - 1 && (
+              <div style={{ width: '16px', height: '1px', background: '#e8e5ed', margin: '0 2px' }} />
             )}
           </div>
         )

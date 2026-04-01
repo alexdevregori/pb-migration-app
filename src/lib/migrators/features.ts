@@ -53,16 +53,29 @@ export async function migrateFeatures(
     }
 
     try {
+      // The status field is an object { id, name } — extract the name for mapping lookup
+      const statusField = feature.fields.status as { name?: string } | string | undefined
+      const sourceStatusName = typeof statusField === 'object' ? statusField?.name : statusField
+      const destStatusId = sourceStatusName
+        ? (state.config.statusMapping ?? {})[sourceStatusName]
+        : undefined
+
+      // Build fields — only include status if mapped
+      const fields: Record<string, unknown> = {
+        name: feature.fields.name,
+        description: feature.fields.description,
+      }
+      if (destStatusId) {
+        fields.status = { id: destStatusId }
+      }
+
       // Create the feature
       const response = await dest.request<{ data: { id: string } }>('/v2/entities', {
         method: 'POST',
         body: JSON.stringify({
           data: {
             type: 'feature',
-            fields: {
-              name: feature.fields.name,
-              description: feature.fields.description,
-            },
+            fields,
             relationships: [{ type: 'parent', data: { id: destParentId } }],
           },
         }),
@@ -71,14 +84,18 @@ export async function migrateFeatures(
       const destFeatureId = response.data.id
       state.idMap.features[feature.id] = destFeatureId
 
-      // Apply selected custom fields via PATCH
+      // Apply selected custom fields via PATCH, using fieldMapping to translate UUIDs
       if (state.config.selectedFields.length > 0) {
         const patch = state.config.selectedFields
-          .filter((fieldId) => feature.fields[fieldId] !== undefined)
-          .map((fieldId) => ({
+          .map((srcFieldId) => ({
+            srcFieldId,
+            destFieldId: (state.config.fieldMapping ?? {})[srcFieldId] ?? srcFieldId,
+          }))
+          .filter(({ srcFieldId }) => feature.fields[srcFieldId] !== undefined)
+          .map(({ srcFieldId, destFieldId }) => ({
             op: 'set',
-            path: fieldId,
-            value: feature.fields[fieldId],
+            path: destFieldId,
+            value: feature.fields[srcFieldId],
           }))
 
         if (patch.length > 0) {

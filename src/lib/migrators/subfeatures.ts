@@ -51,12 +51,27 @@ export async function migrateSubfeatures(
     }
 
     try {
+      // The status field is an object { id, name } — extract the name for mapping lookup
+      const statusField = subfeature.fields.status as { name?: string } | string | undefined
+      const sourceStatusName = typeof statusField === 'object' ? statusField?.name : statusField
+      const destStatusId = sourceStatusName
+        ? (state.config.statusMapping ?? {})[sourceStatusName]
+        : undefined
+
+      const fields: Record<string, unknown> = {
+        name: subfeature.fields.name,
+        description: subfeature.fields.description,
+      }
+      if (destStatusId) {
+        fields.status = { id: destStatusId }
+      }
+
       const response = await dest.request<{ data: { id: string } }>('/v2/entities', {
         method: 'POST',
         body: JSON.stringify({
           data: {
             type: 'subfeature',
-            fields: { name: subfeature.fields.name, description: subfeature.fields.description },
+            fields,
             relationships: [{ type: 'parent', data: { id: destParentId } }],
           },
         }),
@@ -67,8 +82,16 @@ export async function migrateSubfeatures(
 
       if (state.config.selectedFields.length > 0) {
         const patch = state.config.selectedFields
-          .filter((fid) => subfeature.fields[fid] !== undefined)
-          .map((fid) => ({ op: 'set', path: fid, value: subfeature.fields[fid] }))
+          .map((srcFieldId) => ({
+            srcFieldId,
+            destFieldId: (state.config.fieldMapping ?? {})[srcFieldId] ?? srcFieldId,
+          }))
+          .filter(({ srcFieldId }) => subfeature.fields[srcFieldId] !== undefined)
+          .map(({ srcFieldId, destFieldId }) => ({
+            op: 'set',
+            path: destFieldId,
+            value: subfeature.fields[srcFieldId],
+          }))
         if (patch.length > 0) {
           await dest.request(`/v2/entities/${destId}`, {
             method: 'PATCH',
