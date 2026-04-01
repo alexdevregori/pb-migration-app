@@ -1,6 +1,6 @@
 'use client'
 
-import type { ProgressEvent, StepName, StepStatus } from '@/lib/productboard/types'
+import type { StepName, StepStatus } from '@/lib/productboard/types'
 
 const STEP_LABELS: Record<StepName, string> = {
   migrationProduct: 'Create Migration Product',

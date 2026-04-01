@@ -1,12 +1,9 @@
 'use client'
 
-interface ReleaseGroup {
-  id: string
-  fields: { name: string }
-}
+import type { PBReleaseGroup } from '@/lib/productboard/types'
 
 interface Props {
-  releaseGroups: ReleaseGroup[]
+  releaseGroups: PBReleaseGroup[]
   selected: string[]
   onChange: (selected: string[]) => void
 }
