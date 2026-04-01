@@ -11,6 +11,11 @@ export async function migrateProducts(
   state.steps.products = 'in_progress'
   emit({ step: 'products', status: 'in_progress' })
 
+  // Guard: migrationProductId must be set before products can be migrated
+  if (!state.migrationProductId) {
+    throw new Error('migrationProductId is not set — run migrateMigrationProduct first')
+  }
+
   const products = await source.paginate<PBEntity>('/v2/entities?type[]=product')
   const total = products.length
   let migrated = 0

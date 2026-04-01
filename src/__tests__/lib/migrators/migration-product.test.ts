@@ -41,4 +41,15 @@ describe('migrateMigrationProduct', () => {
       expect.objectContaining({ step: 'migrationProduct', status: 'completed' })
     )
   })
+
+  it('sets step to failed and re-throws when API call fails', async () => {
+    const destClient = new ProductboardClient('token')
+    jest.spyOn(destClient, 'request').mockRejectedValueOnce(new Error('Network error'))
+    const state = initState(CONFIG)
+    const emit = jest.fn()
+
+    await expect(migrateMigrationProduct(destClient, state, emit)).rejects.toThrow('Network error')
+    expect(state.steps.migrationProduct).toBe('failed')
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
+  })
 })
