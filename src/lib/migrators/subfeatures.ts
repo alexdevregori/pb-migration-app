@@ -15,7 +15,7 @@ export async function migrateSubfeatures(
   let nextUrl: string | null = null
 
   do {
-    const response = await source.request<{ data: PBEntity[]; links: { next: string | null } }>(
+    const page: { data: PBEntity[]; links: { next: string | null } } = await source.request<{ data: PBEntity[]; links: { next: string | null } }>(
       nextUrl ?? '/v2/entities/search',
       {
         method: 'POST',
@@ -27,8 +27,8 @@ export async function migrateSubfeatures(
         }),
       }
     )
-    allSubfeatures.push(...response.data)
-    nextUrl = response.links?.next ?? null
+    allSubfeatures.push(...page.data)
+    nextUrl = page.links?.next ?? null
   } while (nextUrl)
 
   const total = allSubfeatures.length

@@ -30,7 +30,7 @@ export async function discoverNotes(
     let nextUrl: string | null = null
 
     do {
-      const response = await source.request<{ data: PBNote[]; links: { next: string | null } }>(
+      const page: { data: PBNote[]; links: { next: string | null } } = await source.request<{ data: PBNote[]; links: { next: string | null } }>(
         nextUrl ?? '/v2/notes/search',
         {
           method: 'POST',
@@ -44,7 +44,7 @@ export async function discoverNotes(
         }
       )
 
-      for (const note of response.data) {
+      for (const note of page.data) {
         allNotes.push(note)
         for (const rel of note.relationships ?? []) {
           if (rel.type === 'customer') {
@@ -54,7 +54,7 @@ export async function discoverNotes(
         }
       }
 
-      nextUrl = response.links?.next ?? null
+      nextUrl = page.links?.next ?? null
     } while (nextUrl)
   }
 
