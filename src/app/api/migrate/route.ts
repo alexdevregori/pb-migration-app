@@ -14,8 +14,14 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const config = body as MigrationConfig
 
-  if (!config.sourceApiKey || !config.destinationApiKey) {
-    return NextResponse.json({ error: 'Missing API keys' }, { status: 400 })
+  if (
+    !config.sourceApiKey ||
+    !config.destinationApiKey ||
+    !Array.isArray(config.selectedStatuses) ||
+    !Array.isArray(config.selectedReleaseGroups) ||
+    !Array.isArray(config.selectedFields)
+  ) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
   // Load existing state if resuming, otherwise start fresh

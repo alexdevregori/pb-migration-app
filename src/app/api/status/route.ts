@@ -22,6 +22,7 @@ export async function GET() {
           controller.enqueue(encoder.encode(': heartbeat\n\n'))
         } catch {
           if (heartbeatTimer !== null) clearInterval(heartbeatTimer)
+          if (progressListener) migrationEmitter.off('progress', progressListener)
         }
       }, 15000)
     },
