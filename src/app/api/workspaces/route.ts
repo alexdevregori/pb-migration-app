@@ -18,15 +18,23 @@ export async function GET(request: NextRequest) {
       '/v2/entities/configurations/feature'
     )
 
-    // Extract status field from feature config
-    const statusField = featureConfig.data.fields.find((f) => f.id === 'status')
+    // API returns fields as a keyed object — convert to array for searching/filtering
+    const fieldsArray = Object.values(featureConfig.data.fields)
+
+    // Extract status field — values are returned inline for ≤1000 items
+    const statusField = fieldsArray.find((f) => f.id === 'status')
     let statuses: { id: string; name: string }[] = []
 
     if (statusField) {
-      const statusValues = await source.paginate<{ id: string; name: string }>(
-        `/v2/entities/fields/${statusField.id}/values`
-      )
-      statuses = statusValues
+      if (statusField.values?.data?.length) {
+        // Values already inline in the config response
+        statuses = statusField.values.data
+      } else {
+        // Fall back to the dedicated values endpoint
+        statuses = await source.paginate<{ id: string; name: string }>(
+          `/v2/entities/fields/status/values?assignedEntityType[]=feature`
+        )
+      }
     }
 
     // Fetch all release groups from source
@@ -36,7 +44,7 @@ export async function GET(request: NextRequest) {
 
     // Extract custom fields (non-standard fields, identified by UUID pattern)
     const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    const customFields = featureConfig.data.fields.filter((f) => UUID_REGEX.test(f.id))
+    const customFields = fieldsArray.filter((f) => UUID_REGEX.test(f.id))
 
     // Validate destination key with a lightweight call
     const dest = new ProductboardClient(destKey)

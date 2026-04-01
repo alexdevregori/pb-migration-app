@@ -61,13 +61,19 @@ export interface PBFieldConfig {
   name: string
   path: string
   schema: { type: string }
-  lifecycle: string[]
+  lifecycle: Record<string, unknown>
+  // Inline values for select/status fields (≤1000 values returned directly)
+  values?: {
+    data: Array<{ id: string; name: string }>
+    links?: { next: string | null }
+  }
 }
 
 export interface PBEntityConfig {
-  type: EntityType
-  fields: PBFieldConfig[]
-  filters: string[]
+  type: string
+  // API returns fields as a keyed object (Record), not an array
+  fields: Record<string, PBFieldConfig>
+  filters?: string[]
 }
 
 export interface PBStatus {

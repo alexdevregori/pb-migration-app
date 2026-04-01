@@ -3,17 +3,31 @@
 import type { StepName, StepStatus } from '@/lib/productboard/types'
 
 const STEP_LABELS: Record<StepName, string> = {
-  migrationProduct: 'Create Migration Product',
+  migrationProduct: 'Create Migration product',
   products: 'Products → Components',
   components: 'Components',
   features: 'Features',
   subfeatures: 'Subfeatures',
-  releaseGroups: 'Release Groups',
+  releaseGroups: 'Release groups',
   releases: 'Releases',
-  discoverNotes: 'Discover Notes',
+  discoverNotes: 'Discover notes',
   companies: 'Companies',
   users: 'Users',
   notes: 'Notes',
+}
+
+const STEP_ICONS: Record<StepName, string> = {
+  migrationProduct: '🏗',
+  products: '📦',
+  components: '🧩',
+  features: '✨',
+  subfeatures: '🔹',
+  releaseGroups: '📅',
+  releases: '🚀',
+  discoverNotes: '🔍',
+  companies: '🏢',
+  users: '👤',
+  notes: '📝',
 }
 
 const STEP_ORDER: StepName[] = [
@@ -32,54 +46,157 @@ interface Props {
   progress: Record<string, StepState>
 }
 
-function StatusBadge({ status }: { status: StepStatus }) {
-  const styles: Record<StepStatus, string> = {
-    pending: 'bg-gray-100 text-gray-500',
-    in_progress: 'bg-blue-100 text-blue-700 animate-pulse',
-    completed: 'bg-green-100 text-green-700',
-    failed: 'bg-red-100 text-red-700',
-  }
-  const labels: Record<StepStatus, string> = {
-    pending: 'Waiting',
-    in_progress: 'Running',
-    completed: 'Done',
-    failed: 'Failed',
-  }
+export function MigrationDashboard({ progress }: Props) {
+  const completedCount = STEP_ORDER.filter((s) => (progress[s]?.status ?? 'pending') === 'completed').length
+
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[status]}`}>
-      {labels[status]}
-    </span>
+    <div>
+      {/* Overall progress bar */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+          <span style={{ fontSize: '13px', color: '#6e6882' }}>Overall progress</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#1a1523' }}>
+            {completedCount} / {STEP_ORDER.length} steps
+          </span>
+        </div>
+        <div style={{ height: '6px', background: '#f0edf5', borderRadius: '3px', overflow: 'hidden' }}>
+          <div style={{
+            height: '100%',
+            width: `${(completedCount / STEP_ORDER.length) * 100}%`,
+            background: 'linear-gradient(90deg, #6B2FA0, #9B59B6)',
+            borderRadius: '3px',
+            transition: 'width 0.4s ease',
+          }} />
+        </div>
+      </div>
+
+      {/* Step rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {STEP_ORDER.map((step, i) => {
+          const state = progress[step] ?? { status: 'pending', errors: [] }
+          return (
+            <StepRow
+              key={step}
+              index={i + 1}
+              icon={STEP_ICONS[step]}
+              label={STEP_LABELS[step]}
+              state={state}
+            />
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
-export function MigrationDashboard({ progress }: Props) {
+function StepRow({
+  index, icon, label, state,
+}: {
+  index: number
+  icon: string
+  label: string
+  state: { status: StepStatus; migrated?: number; total?: number; errors: string[] }
+}) {
+  const badge = BADGE_CONFIG[state.status]
+
   return (
-    <div className="space-y-2">
-      {STEP_ORDER.map((step) => {
-        const state = progress[step] ?? { status: 'pending', errors: [] }
-        return (
-          <div key={step} className="border rounded p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">{STEP_LABELS[step]}</span>
-              <div className="flex items-center gap-3">
-                {state.total !== undefined && (
-                  <span className="text-xs text-gray-500">
-                    {state.migrated ?? 0} / {state.total}
-                  </span>
-                )}
-                <StatusBadge status={state.status} />
-              </div>
-            </div>
-            {state.errors.length > 0 && (
-              <ul className="mt-2 space-y-0.5">
-                {state.errors.map((err, i) => (
-                  <li key={i} className="text-xs text-red-600">{err}</li>
-                ))}
-              </ul>
-            )}
+    <div style={{
+      border: `1px solid ${state.status === 'in_progress' ? '#d4c2e8' : '#ede8f3'}`,
+      borderRadius: '8px',
+      padding: '10px 14px',
+      background: state.status === 'in_progress' ? '#faf6ff' : '#fafafa',
+      transition: 'all 0.2s',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Step number / status icon */}
+        <div style={{
+          width: '28px',
+          height: '28px',
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '13px',
+          background: badge.bg,
+          flexShrink: 0,
+        }}>
+          {state.status === 'completed' ? (
+            <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
+              <path d="M1 5L4.5 8.5L11 1.5" stroke="#6B2FA0" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          ) : state.status === 'failed' ? (
+            <span style={{ color: '#DC2626', fontSize: '12px', fontWeight: 700 }}>✕</span>
+          ) : state.status === 'in_progress' ? (
+            <SpinnerPurple />
+          ) : (
+            <span style={{ color: '#a89bb8', fontSize: '11px', fontWeight: 600 }}>{index}</span>
+          )}
+        </div>
+
+        {/* Label + icon */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '13px' }}>{icon}</span>
+            <span style={{
+              fontSize: '13px',
+              fontWeight: state.status === 'in_progress' ? 600 : 500,
+              color: state.status === 'pending' ? '#a89bb8' : '#1a1523',
+            }}>
+              {label}
+            </span>
           </div>
-        )
-      })}
+        </div>
+
+        {/* Count */}
+        {state.total !== undefined && (
+          <span style={{ fontSize: '12px', color: '#6e6882', flexShrink: 0 }}>
+            {state.migrated ?? 0} / {state.total}
+          </span>
+        )}
+
+        {/* Status badge */}
+        <span style={{
+          fontSize: '11px',
+          fontWeight: 600,
+          padding: '3px 8px',
+          borderRadius: '20px',
+          background: badge.bg,
+          color: badge.text,
+          flexShrink: 0,
+          letterSpacing: '0.02em',
+          textTransform: 'uppercase',
+        }}>
+          {badge.label}
+        </span>
+      </div>
+
+      {/* Inline errors */}
+      {state.errors.length > 0 && (
+        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #f0edf5' }}>
+          {state.errors.map((err, i) => (
+            <p key={i} style={{ fontSize: '12px', color: '#DC2626', margin: i > 0 ? '3px 0 0' : '0' }}>
+              ⚠ {err}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
+  )
+}
+
+const BADGE_CONFIG: Record<StepStatus, { bg: string; text: string; label: string }> = {
+  pending:     { bg: '#f0edf5', text: '#a89bb8', label: 'Waiting' },
+  in_progress: { bg: '#EDE4F5', text: '#6B2FA0', label: 'Running' },
+  completed:   { bg: '#ECFDF5', text: '#059669', label: 'Done' },
+  failed:      { bg: '#FEF2F2', text: '#DC2626', label: 'Failed' },
+}
+
+function SpinnerPurple() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <circle cx="7" cy="7" r="5.5" stroke="#d4c2e8" strokeWidth="2"/>
+      <path d="M7 1.5A5.5 5.5 0 0 1 12.5 7" stroke="#6B2FA0" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
   )
 }
