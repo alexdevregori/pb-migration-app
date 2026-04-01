@@ -1,5 +1,6 @@
 import { discoverNotes, migrateNotes } from '@/lib/migrators/notes'
 import { ProductboardClient } from '@/lib/productboard/client'
+import { PBNote } from '@/lib/productboard/types'
 import { initState } from '@/lib/state'
 
 describe('discoverNotes', () => {
@@ -32,6 +33,7 @@ describe('discoverNotes', () => {
 
     expect(notes).toHaveLength(1)
     expect(companyIds.has('company-1')).toBe(true)
+    expect(userIds.size).toBe(0)
   })
 })
 
@@ -51,8 +53,6 @@ describe('migrateNotes', () => {
 
     const source = new ProductboardClient('src')
     const dest = new ProductboardClient('dest')
-    // paginate for members returns empty array (no members to match)
-    jest.spyOn(dest, 'paginate').mockResolvedValueOnce([])
     jest.spyOn(dest, 'request').mockResolvedValueOnce({ data: { id: 'dest-note-1' } })
 
     const state = initState({
@@ -62,7 +62,7 @@ describe('migrateNotes', () => {
     state.idMap.features['src-f1'] = 'dest-f1'
     state.idMap.companies['src-company-1'] = 'dest-company-1'
 
-    await migrateNotes(sourceNotes as any, source, dest, state, jest.fn())
+    await migrateNotes(sourceNotes as PBNote[], source, dest, state, jest.fn())
 
     expect(state.idMap.notes['note-1']).toBe('dest-note-1')
   })
