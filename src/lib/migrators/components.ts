@@ -63,6 +63,7 @@ export async function migrateComponents(
       const err = { step: 'components' as const, sourceId: component.id, name: String(component.fields.name), message }
       state.errors.push(err)
       await saveState(state)
+      emit({ step: 'components', status: 'in_progress', migrated, total, error: err })
     }
   }
 
