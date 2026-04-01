@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ConfigForm } from '@/components/ConfigForm'
 import { StatusSelector } from '@/components/StatusSelector'
 import { ReleaseGroupSelector } from '@/components/ReleaseGroupSelector'
@@ -32,13 +32,22 @@ export default function Home() {
 
   const [progress, setProgress] = useState<Record<string, StepState>>({})
   const [hasPriorRun, setHasPriorRun] = useState(false)
+  const [isMigrating, setIsMigrating] = useState(false)
+
+  const esRef = useRef<EventSource | null>(null)
 
   // Check for prior run on mount — GET /api/migrate returns { hasPriorRun: boolean }
   useEffect(() => {
     fetch('/api/migrate')
-      .then((r) => r.json())
-      .then((data) => { if (data.hasPriorRun) setHasPriorRun(true) })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.hasPriorRun) setHasPriorRun(true) })
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      esRef.current?.close()
+    }
   }, [])
 
   async function handleConnect(src: string, dest: string) {
@@ -82,30 +91,49 @@ export default function Home() {
   }, [])
 
   function startListening() {
+    esRef.current?.close()
     const es = new EventSource('/api/status')
+    esRef.current = es
     es.onmessage = (e) => {
-      const event: ProgressEvent = JSON.parse(e.data)
-      handleProgress(event)
+      try {
+        const event: ProgressEvent = JSON.parse(e.data)
+        handleProgress(event)
+      } catch {
+        // ignore malformed SSE frames
+      }
     }
     es.onerror = () => es.close()
   }
 
   async function startMigration(resume = false) {
+    if (isMigrating) return
+    setIsMigrating(true)
     setPanel('running')
     startListening()
 
-    await fetch('/api/migrate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sourceApiKey: sourceKey,
-        destinationApiKey: destKey,
-        selectedStatuses,
-        selectedReleaseGroups,
-        selectedFields,
-        resume,
-      }),
-    })
+    try {
+      const res = await fetch('/api/migrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceApiKey: sourceKey,
+          destinationApiKey: destKey,
+          selectedStatuses,
+          selectedReleaseGroups,
+          selectedFields,
+          resume,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to start migration' }))
+        throw new Error(err.error || 'Failed to start migration')
+      }
+    } catch (e: unknown) {
+      // Revert to settings panel and show error
+      setPanel('settings')
+      setConnectError(e instanceof Error ? e.message : 'Failed to start migration')
+      setIsMigrating(false)
+    }
   }
 
   return (
@@ -144,14 +172,16 @@ export default function Home() {
           <div className="flex gap-3 pt-2">
             <button
               onClick={() => startMigration(false)}
-              className="bg-blue-600 text-white px-5 py-2 rounded text-sm"
+              disabled={isMigrating}
+              className="bg-blue-600 text-white px-5 py-2 rounded text-sm disabled:opacity-50"
             >
               Start Migration
             </button>
             {hasPriorRun && (
               <button
                 onClick={() => startMigration(true)}
-                className="border border-blue-600 text-blue-600 px-5 py-2 rounded text-sm"
+                disabled={isMigrating}
+                className="border border-blue-600 text-blue-600 px-5 py-2 rounded text-sm disabled:opacity-50"
               >
                 Resume Previous Run
               </button>
