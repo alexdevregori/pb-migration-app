@@ -71,4 +71,29 @@ describe('runMigration', () => {
     expect(migrationProductSpy).not.toHaveBeenCalled()
     expect(productsSpy).toHaveBeenCalled()
   })
+
+  it('re-runs discoverNotes when notes step is not yet completed', async () => {
+    const state = initState(CONFIG)
+    // Simulate crash: discovery done but notes not yet migrated
+    state.steps.migrationProduct = 'completed'
+    state.steps.products = 'completed'
+    state.steps.components = 'completed'
+    state.steps.features = 'completed'
+    state.steps.subfeatures = 'completed'
+    state.steps.releaseGroups = 'completed'
+    state.steps.releases = 'completed'
+    state.steps.discoverNotes = 'completed'
+    state.steps.companies = 'completed'
+    state.steps.users = 'completed'
+    // state.steps.notes is still 'pending'
+
+    const discoverNotesMock = jest.requireMock('@/lib/migrators/notes').discoverNotes as jest.Mock
+    // discoverNotes must return the expected shape
+    discoverNotesMock.mockResolvedValue({ notes: [], companyIds: new Set(), userIds: new Set() })
+
+    await runMigration(CONFIG, state, jest.fn())
+
+    // discoverNotes should be re-run even though its step is marked completed
+    expect(discoverNotesMock).toHaveBeenCalled()
+  })
 })

@@ -70,6 +70,7 @@ export async function runMigration(
 
   let discoveredNotes: Awaited<ReturnType<typeof discoverNotes>> | null = null
   if (needsDiscovery) {
+    emit({ step: 'discoverNotes', status: 'in_progress' })
     discoveredNotes = await discoverNotes(source, state)
     emit({ step: 'discoverNotes', status: 'completed' })
   }
