@@ -76,10 +76,6 @@ export async function migrateNotes(
   let migrated = 0
   emit({ step: 'notes', status: 'in_progress', migrated: 0, total })
 
-  // Fetch destination members once for owner/creator matching
-  const destMembers = await dest.paginate<{ id: string; email: string }>('/v2/members')
-  const memberByEmail = new Map(destMembers.map((m) => [m.email, m.id]))
-
   for (const note of notes) {
     try {
       // Build destination relationships
