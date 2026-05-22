@@ -291,6 +291,7 @@ export async function migrateNotes(
               ;(fields.content as unknown[]).push({
                 externalId: `${note.id}-source-owner`,
                 content: tag,
+                authorName: '',
                 authorType: 'agent',
                 timestamp: new Date().toISOString(),
               })
