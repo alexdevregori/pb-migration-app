@@ -284,9 +284,20 @@ export async function migrateNotes(
           state.errors.push(warn)
           emit({ step: 'notes', status: 'in_progress', migrated, total, error: warn })
 
-          if (state.config.appendSourceOwnerOnUnassigned && (fields.content === undefined || typeof fields.content === 'string')) {
-            const existing = typeof fields.content === 'string' ? fields.content : ''
-            fields.content = existing ? `${existing}\n\nSource Owner: ${ownerEmail}` : `Source Owner: ${ownerEmail}`
+          if (state.config.appendSourceOwnerOnUnassigned) {
+            const tag = `Source Owner: ${ownerEmail}`
+            if (Array.isArray(fields.content)) {
+              // conversationNote — append a new conversation part
+              ;(fields.content as unknown[]).push({
+                externalId: `${note.id}-source-owner`,
+                content: tag,
+                authorType: 'agent',
+                timestamp: new Date().toISOString(),
+              })
+            } else {
+              const existing = typeof fields.content === 'string' ? fields.content : ''
+              fields.content = existing ? `${existing}\n\n${tag}` : tag
+            }
           }
         }
       }
