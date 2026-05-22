@@ -284,7 +284,7 @@ export async function migrateNotes(
           state.errors.push(warn)
           emit({ step: 'notes', status: 'in_progress', migrated, total, error: warn })
 
-          if (state.config.appendSourceOwnerOnUnassigned) {
+          if (state.config.appendSourceOwnerOnUnassigned && (fields.content === undefined || typeof fields.content === 'string')) {
             const existing = typeof fields.content === 'string' ? fields.content : ''
             fields.content = existing ? `${existing}\n\nSource Owner: ${ownerEmail}` : `Source Owner: ${ownerEmail}`
           }
