@@ -8,16 +8,23 @@ export type EntityType =
   | 'release'
   | 'releaseGroup'
 
+// One entry in the relationships data array (both in GET responses and POST bodies)
+export interface PBRelationshipEntry {
+  type: string                        // e.g. 'parent' | 'child' | 'link' | 'customer'
+  target: { id: string; type?: string }
+}
+
+// Paginated relationships object returned by the API
+export interface PBRelationships {
+  data: PBRelationshipEntry[]
+  links?: { next: string | null }
+}
+
 export interface PBEntity {
   id: string
   type: EntityType
   fields: Record<string, unknown>
-  relationships?: PBRelationship[]
-}
-
-export interface PBRelationship {
-  type: 'parent' | 'child' | 'link' | 'isBlockedBy' | 'isBlocking' | 'customer'
-  data: { id: string; type?: string }
+  relationships?: PBRelationships
 }
 
 export interface PBNote {
@@ -28,14 +35,22 @@ export interface PBNote {
     content?: string
     processed?: boolean
     archived?: boolean
+    createdAt?: string
     tags?: { name: string }[]
+    source?: { id?: string | null; origin?: string | null; url?: string | null }
+    owner?: { id?: string; email?: string }
+    creator?: { id?: string; email?: string }
   }
-  relationships?: PBNoteRelationship[]
+  relationships?: PBRelationships
 }
 
-export interface PBNoteRelationship {
-  type: 'link' | 'customer' | 'owner' | 'creator'
-  data: { id: string; type?: string }
+export interface PBJiraIntegration {
+  id: string
+  type: 'jiraIntegration'
+  fields: {
+    name: string
+    integrationStatus: 'enabled' | 'disabled'
+  }
 }
 
 export interface PBMember {
@@ -108,11 +123,13 @@ export interface PBSingleResponse<T> {
 export type StepStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
 
 export type StepName =
+  | 'discovery'
   | 'migrationProduct'
   | 'products'
   | 'components'
   | 'features'
   | 'subfeatures'
+  | 'dependencies'
   | 'releaseGroups'
   | 'releases'
   | 'discoverNotes'
@@ -124,12 +141,35 @@ export interface MigrationConfig {
   sourceApiKey: string
   destinationApiKey: string
   selectedStatuses: string[]
+  selectedProducts: string[]
   selectedReleaseGroups: string[]
   selectedFields: string[]
   // source status name → destination status ID (optional — omitting skips status migration)
   statusMapping?: Record<string, string>
   // source field UUID → destination field UUID (optional — falls back to same UUID)
   fieldMapping?: Record<string, string>
+  // Built-in feature fields to migrate (default: all)
+  selectedFeatureFields?: string[]
+  // Tag keyword filter — only tags containing these strings are copied (default: all)
+  tagKeywords?: string[]
+  // Tag match mode — 'contains' (default) or 'exact'
+  tagMatchMode?: 'contains' | 'exact'
+  // Destination text field that will receive the source entity's original API ID
+  sourceIdFieldId?: string
+  // Jira key migration — one entry per integration: which dest text field receives its issue keys
+  jiraIntegrationMappings?: Array<{ integrationId: string; destFieldId: string }>
+  // Destination custom field values — used to resolve select option names across workspaces
+  destCustomFields?: PBFieldConfig[]
+  // Note migration options (all off by default; null maxAgeDays = no age limit)
+  includeLinkedNotes?: boolean
+  linkedNotesMaxAgeDays?: number | null
+  includeNotesLinkedToNonMigratedFeatures?: boolean
+  nonMigratedLinkedNotesMaxAgeDays?: number | null
+  includeUnprocessedOrphanNotes?: boolean
+  unprocessedOrphanNotesMaxAgeDays?: number | null
+  includeProcessedOrphanNotes?: boolean
+  processedOrphanNotesMaxAgeDays?: number | null
+  appendSourceOwnerOnUnassigned?: boolean
 }
 
 export interface MigrationState {
@@ -155,6 +195,12 @@ export interface MigrationError {
   sourceId: string
   name: string
   message: string
+  severity?: 'warning' | 'error'
+  request?: {
+    method: string
+    url: string
+    body?: unknown
+  }
 }
 
 // ── Progress events (SSE) ───────────────────────────────────────────────────
@@ -164,17 +210,29 @@ export interface ProgressEvent {
   status: StepStatus
   migrated?: number
   total?: number
+  message?: string
   error?: MigrationError
 }
 
 // ── Workspace info (returned to UI) ────────────────────────────────────────
 
+export interface WorkspaceIdentity {
+  name: string
+  email: string
+}
+
 export interface WorkspaceInfo {
   // Source workspace
   statuses: PBStatus[]
+  products: { id: string; name: string }[]
   releaseGroups: PBReleaseGroup[]
   customFields: PBFieldConfig[]
   // Destination workspace (used for mapping)
   destStatuses: PBStatus[]
   destCustomFields: PBFieldConfig[]
+  // Jira integrations found in the source workspace
+  jiraIntegrations?: Array<{ id: string; name: string; status: string }>
+  // Identity (fetched from /v1/me — may be absent if the endpoint isn't available)
+  sourceUser?: WorkspaceIdentity
+  destUser?: WorkspaceIdentity
 }
