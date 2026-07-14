@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 interface Props {
   onConnect: (sourceKey: string, destKey: string) => void
   loading: boolean
@@ -7,6 +9,9 @@ interface Props {
 }
 
 export function ConfigForm({ onConnect, loading, error }: Props) {
+  const [showSource, setShowSource] = useState(false)
+  const [showDest, setShowDest] = useState(false)
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const form = e.currentTarget
@@ -20,26 +25,32 @@ export function ConfigForm({ onConnect, loading, error }: Props) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
         <div>
           <label style={labelStyle} htmlFor="sourceKey">Source workspace API key</label>
-          <input
-            id="sourceKey"
-            name="sourceKey"
-            type="password"
-            required
-            style={inputStyle}
-            placeholder="pb_key_..."
-          />
+          <div style={inputWrapStyle}>
+            <input
+              id="sourceKey"
+              name="sourceKey"
+              type={showSource ? 'text' : 'password'}
+              required
+              style={inputStyle}
+              placeholder="Enter your API key"
+            />
+            <ToggleButton show={showSource} onToggle={() => setShowSource((v) => !v)} />
+          </div>
           <p style={hintStyle}>The workspace you&apos;re migrating <em>from</em></p>
         </div>
         <div>
           <label style={labelStyle} htmlFor="destKey">Destination workspace API key</label>
-          <input
-            id="destKey"
-            name="destKey"
-            type="password"
-            required
-            style={inputStyle}
-            placeholder="pb_key_..."
-          />
+          <div style={inputWrapStyle}>
+            <input
+              id="destKey"
+              name="destKey"
+              type={showDest ? 'text' : 'password'}
+              required
+              style={inputStyle}
+              placeholder="Enter your API key"
+            />
+            <ToggleButton show={showDest} onToggle={() => setShowDest((v) => !v)} />
+          </div>
           <p style={hintStyle}>The workspace you&apos;re migrating <em>to</em></p>
         </div>
       </div>
@@ -54,7 +65,7 @@ export function ConfigForm({ onConnect, loading, error }: Props) {
         type="submit"
         disabled={loading}
         style={{
-          background: loading ? '#c4afd8' : '#6B2FA0',
+          background: loading ? '#93C5FD' : '#0079F2',
           color: '#ffffff',
           border: 'none',
           borderRadius: '8px',
@@ -74,6 +85,45 @@ export function ConfigForm({ onConnect, loading, error }: Props) {
   )
 }
 
+function ToggleButton({ show, onToggle }: { show: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{
+        position: 'absolute',
+        right: '10px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        background: 'none',
+        border: 'none',
+        padding: '2px',
+        cursor: 'pointer',
+        color: '#8F96A7',
+        display: 'flex',
+        alignItems: 'center',
+        lineHeight: 1,
+      }}
+      aria-label={show ? 'Hide API key' : 'Show API key'}
+    >
+      {show ? (
+        // Eye-off icon
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      ) : (
+        // Eye icon
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      )}
+    </button>
+  )
+}
+
 function Spinner() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}>
@@ -88,18 +138,24 @@ const labelStyle: React.CSSProperties = {
   display: 'block',
   fontSize: '13px',
   fontWeight: 500,
-  color: '#1a1523',
+  color: '#000C2C',
   marginBottom: '6px',
+}
+
+const inputWrapStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
 }
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  border: '1px solid #d4cede',
+  border: '1px solid #CDCFD5',
   borderRadius: '8px',
-  padding: '8px 12px',
+  padding: '8px 36px 8px 12px',
   fontSize: '14px',
-  color: '#1a1523',
-  background: '#fafafa',
+  color: '#000C2C',
+  background: '#FAFAFB',
   outline: 'none',
   boxSizing: 'border-box',
   transition: 'border-color 0.15s',
@@ -107,6 +163,6 @@ const inputStyle: React.CSSProperties = {
 
 const hintStyle: React.CSSProperties = {
   fontSize: '12px',
-  color: '#a89bb8',
+  color: '#8F96A7',
   margin: '4px 0 0',
 }

@@ -11,7 +11,7 @@ export async function migrateReleaseGroups(
   state.steps.releaseGroups = 'in_progress'
   emit({ step: 'releaseGroups', status: 'in_progress' })
 
-  const allGroups = await source.paginate<PBReleaseGroup>('/v2/entities?type[]=releaseGroup')
+  const allGroups = await source.paginate<PBReleaseGroup>('/v2/entities?type[]=releaseGroup&archived=false')
   const selectedGroups = allGroups.filter((g) =>
     state.config.selectedReleaseGroups.includes(g.id)
   )

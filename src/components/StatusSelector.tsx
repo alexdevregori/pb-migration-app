@@ -47,9 +47,9 @@ export function StatusSelector({ statuses, selected, onChange }: Props) {
                 fontSize: '13px',
                 fontWeight: 500,
                 cursor: 'pointer',
-                border: `1px solid ${checked ? '#6B2FA0' : '#d4cede'}`,
-                background: checked ? '#EDE4F5' : '#ffffff',
-                color: checked ? '#6B2FA0' : '#6e6882',
+                border: `1px solid ${checked ? '#BFDBFE' : '#E0E2E5'}`,
+                background: checked ? '#EFF6FF' : '#ffffff',
+                color: checked ? '#0079F2' : '#6B7280',
                 transition: 'all 0.15s',
               }}
             >
@@ -59,7 +59,7 @@ export function StatusSelector({ statuses, selected, onChange }: Props) {
           )
         })}
         {statuses.length === 0 && (
-          <p style={{ color: '#a89bb8', fontSize: '13px' }}>No statuses found in this workspace.</p>
+          <p style={{ color: '#8F96A7', fontSize: '13px' }}>No statuses found in this workspace.</p>
         )}
       </div>
     </div>
@@ -67,33 +67,19 @@ export function StatusSelector({ statuses, selected, onChange }: Props) {
 }
 
 const sectionTitleStyle: React.CSSProperties = {
-  fontSize: '13px',
-  fontWeight: 600,
-  color: '#1a1523',
-  margin: 0,
+  fontSize: '13px', fontWeight: 600, color: '#000C2C', margin: 0,
 }
 
 const sectionSubtitleStyle: React.CSSProperties = {
-  fontSize: '12px',
-  color: '#a89bb8',
-  margin: '2px 0 0',
+  fontSize: '12px', color: '#8F96A7', margin: '2px 0 0',
 }
 
 function QuickLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        background: 'none',
-        border: 'none',
-        color: '#6B2FA0',
-        fontSize: '12px',
-        cursor: 'pointer',
-        padding: '2px 0',
-        fontWeight: 500,
-      }}
-    >
+    <button type="button" onClick={onClick} style={{
+      background: 'none', border: 'none', color: '#0079F2',
+      fontSize: '12px', cursor: 'pointer', padding: '2px 0', fontWeight: 500,
+    }}>
       {children}
     </button>
   )

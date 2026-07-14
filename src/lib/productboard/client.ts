@@ -48,12 +48,24 @@ export class ProductboardClient {
       return this.request<T>(pathOrUrl, options, retryCount + 1)
     }
 
+    // Retry transient server errors with exponential backoff
+    if (response.status === 500) {
+      if (retryCount >= MAX_RETRIES) {
+        const body = await response.text()
+        throw new Error(`API error 500 after ${MAX_RETRIES} retries: ${body}`)
+      }
+      await sleep(2 ** retryCount * 1000) // 1s, 2s, 4s
+      return this.request<T>(pathOrUrl, options, retryCount + 1)
+    }
+
     if (!response.ok) {
       const body = await response.text()
       throw new Error(`API error ${response.status}: ${body}`)
     }
 
-    return response.json() as Promise<T>
+    const text = await response.text()
+    if (!text) return undefined as T
+    return JSON.parse(text) as T
   }
 
   async paginate<T>(path: string, params?: Record<string, string>): Promise<T[]> {

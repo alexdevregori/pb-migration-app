@@ -42,3 +42,6 @@ next-env.d.ts
 
 # migration state
 migration-state.json
+
+# claude code
+.claude/

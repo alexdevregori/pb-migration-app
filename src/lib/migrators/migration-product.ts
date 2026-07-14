@@ -11,12 +11,13 @@ export async function migrateMigrationProduct(
   emit({ step: 'migrationProduct', status: 'in_progress' })
 
   try {
+    const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ') // "YYYY-MM-DD HH:MM"
     const response = await dest.request<{ data: { id: string } }>('/v2/entities', {
       method: 'POST',
       body: JSON.stringify({
         data: {
           type: 'product',
-          fields: { name: 'Migration' },
+          fields: { name: `Migration ${timestamp}` },
         },
       }),
     })

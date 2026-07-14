@@ -1,7 +1,8 @@
 'use client'
 
-import { useRef } from 'react'
+import { useState } from 'react'
 import type { PBStatus, PBFieldConfig } from '@/lib/productboard/types'
+import { deriveFieldType, isSelectType } from '@/lib/field-type'
 
 export interface MappingConfig {
   statusMapping: Record<string, string>   // source status name  → dest status ID
@@ -9,17 +10,23 @@ export interface MappingConfig {
 }
 
 interface Props {
-  // Source items (only the ones the user selected in Configure)
-  selectedStatuses: string[]          // source status names
-  selectedFields:   string[]          // source field UUIDs
-  // Full lists from both workspaces
+  selectedStatuses: string[]
+  selectedFields:   string[]
   sourceStatuses:   PBStatus[]
   destStatuses:     PBStatus[]
   sourceFields:     PBFieldConfig[]
   destFields:       PBFieldConfig[]
-  // Current mapping state
   mapping:   MappingConfig
   onChange:  (next: MappingConfig) => void
+  // Source ID field
+  includeSourceId?:       boolean
+  sourceIdFieldId?:       string | null
+  onSourceIdFieldChange?: (fieldId: string | null) => void
+  // Jira integration mappings
+  selectedJiraIntegrations?:       Array<{ id: string; name: string }>
+  jiraIntegrationMappings?:        Array<{ integrationId: string; destFieldId: string }>
+  onJiraIntegrationMappingsChange?: (mappings: Array<{ integrationId: string; destFieldId: string }>) => void
+  onRefreshDestFields?: () => Promise<void>
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -29,9 +36,25 @@ export function MappingPanel({
   sourceStatuses, destStatuses,
   sourceFields, destFields,
   mapping, onChange,
+  includeSourceId, sourceIdFieldId, onSourceIdFieldChange,
+  selectedJiraIntegrations, jiraIntegrationMappings, onJiraIntegrationMappingsChange,
+  onRefreshDestFields,
 }: Props) {
-  const showStatuses = selectedStatuses.length > 0
-  const showFields   = selectedFields.length > 0
+  const showStatuses  = selectedStatuses.length > 0
+  const showFields    = selectedFields.length > 0
+  const showSourceId  = !!includeSourceId
+  const showJira      = (selectedJiraIntegrations?.length ?? 0) > 0
+
+  function setJiraDestField(integrationId: string, destFieldId: string | null) {
+    const current = jiraIntegrationMappings ?? []
+    const without = current.filter((m) => m.integrationId !== integrationId)
+    const next = destFieldId ? [...without, { integrationId, destFieldId }] : without
+    onJiraIntegrationMappingsChange?.(next)
+  }
+
+  const mappedJiraCount = (selectedJiraIntegrations ?? []).filter((i) =>
+    (jiraIntegrationMappings ?? []).some((m) => m.integrationId === i.id)
+  ).length
 
   function setStatusMapping(srcName: string, destId: string | null) {
     const next = { ...mapping.statusMapping }
@@ -62,16 +85,12 @@ export function MappingPanel({
             total={selectedStatuses.length}
           />
           <MappingTable
-            sourceItems={selectedStatuses.map((name) => {
-              const s = sourceStatuses.find((x) => x.name === name)
-              return { id: name, label: name, sublabel: s?.id }
-            })}
+            sourceItems={selectedStatuses.map((name) => ({ id: name, label: name }))}
             destItems={destStatuses.map((s) => ({ id: s.id, label: s.name }))}
             mapping={mapping.statusMapping}
             onMap={(srcId, destId) => setStatusMapping(srcId, destId)}
             onUnmap={(srcId) => setStatusMapping(srcId, null)}
             emptyDestMessage="No statuses found in destination workspace."
-            dragType="status"
           />
         </section>
       )}
@@ -82,28 +101,72 @@ export function MappingPanel({
         <section>
           <SectionHeader
             title="Custom field mapping"
-            subtitle="Match each source custom field to the corresponding field in the destination workspace. Values for unmapped fields will be skipped."
+            subtitle="Match each source custom field to the corresponding field in the destination workspace. Only fields of the same type are shown as options."
             unmapped={unmappedFields.length}
             total={selectedFields.length}
           />
-          <MappingTable
-            sourceItems={selectedFields.map((id) => {
-              const f = sourceFields.find((x) => x.id === id)
-              return { id, label: f?.name ?? id, sublabel: f?.schema?.type }
-            })}
-            destItems={destFields.map((f) => ({ id: f.id, label: f.name, sublabel: f.schema?.type }))}
+          <FieldMappingTable
+            selectedFields={selectedFields}
+            sourceFields={sourceFields}
+            destFields={destFields}
             mapping={mapping.fieldMapping}
             onMap={(srcId, destId) => setFieldMapping(srcId, destId)}
             onUnmap={(srcId) => setFieldMapping(srcId, null)}
-            emptyDestMessage="No custom fields found in destination workspace."
-            dragType="field"
+            onRefreshDestFields={onRefreshDestFields}
           />
         </section>
       )}
 
-      {!showStatuses && !showFields && (
-        <p style={{ color: '#a89bb8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
-          No statuses or custom fields were selected — nothing to map.
+      {showSourceId && (showStatuses || showFields) && <Divider />}
+
+      {showSourceId && (
+        <section>
+          <SectionHeader
+            title="Source ID field"
+            subtitle="Write each entity's original source API ID to a text field in the destination. Useful for linking notes after import."
+            unmapped={sourceIdFieldId ? 0 : 1}
+            total={1}
+          />
+          <JiraFieldPicker
+            integrationName="Source entity ID"
+            destFields={destFields}
+            value={sourceIdFieldId ?? null}
+            onChange={(id) => onSourceIdFieldChange?.(id)}
+          />
+        </section>
+      )}
+
+      {showJira && (showStatuses || showFields || showSourceId) && <Divider />}
+
+
+      {showJira && (
+        <section>
+          <SectionHeader
+            title="Jira issue keys"
+            subtitle="Choose a destination text field for each integration's issue key. Only text fields are shown."
+            unmapped={(selectedJiraIntegrations?.length ?? 0) - mappedJiraCount}
+            total={selectedJiraIntegrations?.length ?? 0}
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {(selectedJiraIntegrations ?? []).map((integration) => {
+              const mapped = (jiraIntegrationMappings ?? []).find((m) => m.integrationId === integration.id)
+              return (
+                <JiraFieldPicker
+                  key={integration.id}
+                  integrationName={integration.name}
+                  destFields={destFields}
+                  value={mapped?.destFieldId ?? null}
+                  onChange={(fieldId) => setJiraDestField(integration.id, fieldId)}
+                />
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {!showStatuses && !showFields && !showJira && !showSourceId && (
+        <p style={{ color: '#8F96A7', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
+          No statuses, custom fields, or integrations were selected — nothing to map.
         </p>
       )}
     </div>
@@ -116,231 +179,300 @@ interface SourceItem { id: string; label: string; sublabel?: string }
 interface DestItem   { id: string; label: string; sublabel?: string }
 
 function MappingTable({
-  sourceItems, destItems, mapping, onMap, onUnmap, emptyDestMessage, dragType,
+  sourceItems, destItems, mapping, onMap, onUnmap, emptyDestMessage,
 }: {
-  sourceItems:        SourceItem[]
-  destItems:          DestItem[]
-  mapping:            Record<string, string>
-  onMap:              (srcId: string, destId: string) => void
-  onUnmap:            (srcId: string) => void
-  emptyDestMessage:   string
-  dragType:           string
+  sourceItems:      SourceItem[]
+  destItems:        DestItem[]
+  mapping:          Record<string, string>
+  onMap:            (srcId: string, destId: string) => void
+  onUnmap:          (srcId: string) => void
+  emptyDestMessage: string
 }) {
-  const draggingSrc = useRef<string | null>(null)
-
   if (destItems.length === 0) {
-    return <p style={{ color: '#a89bb8', fontSize: '13px' }}>{emptyDestMessage}</p>
+    return <p style={{ color: '#8F96A7', fontSize: '13px' }}>{emptyDestMessage}</p>
   }
 
-  // Dest items that have already been mapped by some source item
-  const usedDestIds = new Set(Object.values(mapping))
-
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0 16px', alignItems: 'start' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
       {/* Column headers */}
-      <ColHeader>Source workspace</ColHeader>
-      <div />
-      <ColHeader>Destination workspace</ColHeader>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 20px 1fr', gap: '0 12px', paddingBottom: '4px' }}>
+        <ColHeader>Source</ColHeader>
+        <div />
+        <ColHeader>Destination</ColHeader>
+      </div>
 
-      {/* Rows — one per source item */}
       {sourceItems.map((src) => {
-        const mappedDestId  = mapping[src.id]
-        const mappedDest    = destItems.find((d) => d.id === mappedDestId)
-        const isMapped      = !!mappedDestId
+        const mappedDestId = mapping[src.id]
+        const isMapped     = !!mappedDestId
 
         return (
-          <div key={src.id} style={{ display: 'contents' }}>
-            {/* Source chip */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0' }}>
-              <Chip
-                label={src.label}
-                sublabel={src.sublabel}
-                variant={isMapped ? 'mapped' : 'unmapped'}
-                draggable
-                onDragStart={() => { draggingSrc.current = src.id }}
-                onDragEnd={() => { draggingSrc.current = null }}
-              />
+          <div
+            key={src.id}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 20px 1fr',
+              gap: '0 12px',
+              alignItems: 'center',
+              padding: '8px 10px',
+              borderRadius: '8px',
+              border: `1px solid ${isMapped ? '#BFDBFE' : '#E0E2E5'}`,
+              background: isMapped ? '#F0F7FF' : '#FAFAFB',
+            }}
+          >
+            {/* Source label */}
+            <div>
+              <span style={{ fontSize: '13px', fontWeight: 500, color: '#000C2C' }}>{src.label}</span>
+              {src.sublabel && (
+                <span style={{ fontSize: '11px', color: '#8F96A7', marginLeft: '6px' }}>{src.sublabel}</span>
+              )}
             </div>
 
             {/* Arrow */}
-            <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0' }}>
-              <svg width="24" height="12" viewBox="0 0 24 12" fill="none">
-                <path d="M0 6h20M15 1l5 5-5 5" stroke={isMapped ? '#6B2FA0' : '#d4cede'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
+            <svg width="16" height="10" viewBox="0 0 16 10" fill="none">
+              <path d="M0 5h12M8 1l4 4-4 4" stroke={isMapped ? '#0079F2' : '#CDCFD5'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
 
-            {/* Drop zone */}
-            <div
-              style={{ padding: '6px 0' }}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault()
-                if (draggingSrc.current) {
-                  // If this dest was already claimed by another source, unmap it first
-                  const prevSrc = Object.entries(mapping).find(([, dId]) => dId === src.id)?.[0]
-                  if (prevSrc) onUnmap(prevSrc)
-                  onMap(draggingSrc.current, src.id)
-                  draggingSrc.current = null
-                }
-              }}
-            >
-              {isMapped ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Chip label={mappedDest?.label ?? mappedDestId} sublabel={mappedDest?.sublabel} variant="mapped" />
-                  <button
-                    onClick={() => onUnmap(src.id)}
-                    title="Remove mapping"
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: '#a89bb8', fontSize: '14px', padding: '0 2px', lineHeight: 1,
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <DropZone
-                  onDrop={(destId) => onMap(src.id, destId)}
-                  draggingSrc={draggingSrc}
-                  srcId={src.id}
-                  dragType={dragType}
-                />
-              )}
+            {/* Destination dropdown */}
+            <div style={{ position: 'relative' }}>
+              <select
+                value={mappedDestId ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (val === '') onUnmap(src.id)
+                  else onMap(src.id, val)
+                }}
+                style={{
+                  width: '100%',
+                  appearance: 'none',
+                  WebkitAppearance: 'none',
+                  border: `1px solid ${isMapped ? '#BFDBFE' : '#CDCFD5'}`,
+                  borderRadius: '6px',
+                  padding: '6px 28px 6px 10px',
+                  fontSize: '13px',
+                  fontWeight: isMapped ? 500 : 400,
+                  color: isMapped ? '#0079F2' : '#8F96A7',
+                  background: isMapped ? '#EFF6FF' : '#ffffff',
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                <option value="">— not mapped —</option>
+                {destItems.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}{d.sublabel ? ` (${d.sublabel})` : ''}
+                  </option>
+                ))}
+              </select>
+              {/* Custom chevron */}
+              <svg
+                width="10" height="6" viewBox="0 0 10 6" fill="none"
+                style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+              >
+                <path d="M1 1l4 4 4-4" stroke={isMapped ? '#0079F2' : '#8F96A7'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </div>
           </div>
         )
       })}
-
-      {/* Divider */}
-      <div style={{ gridColumn: '1 / -1', height: '1px', background: '#f0edf5', margin: '8px 0' }} />
-
-      {/* Destination pool — unmapped dest items available to drag from */}
-      <div style={{ gridColumn: '1 / -1' }}>
-        <p style={{ fontSize: '12px', color: '#a89bb8', margin: '0 0 8px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Destination options — drag onto a source row above
-        </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-          {destItems.map((dest) => {
-            const alreadyUsed = usedDestIds.has(dest.id)
-            return (
-              <div
-                key={dest.id}
-                draggable={!alreadyUsed}
-                onDragStart={(e) => {
-                  if (alreadyUsed) { e.preventDefault(); return }
-                  e.dataTransfer.setData(`dest-${dragType}`, dest.id)
-                  // Store for cross-zone drop handling
-                  ;(window as typeof window & { _dragDestId?: string })._dragDestId = dest.id
-                }}
-                style={{ opacity: alreadyUsed ? 0.35 : 1, cursor: alreadyUsed ? 'default' : 'grab' }}
-              >
-                <Chip
-                  label={dest.label}
-                  sublabel={dest.sublabel}
-                  variant={alreadyUsed ? 'used' : 'dest'}
-                />
-              </div>
-            )
-          })}
-        </div>
-      </div>
     </div>
   )
 }
 
-// ─── DropZone ─────────────────────────────────────────────────────────────────
+// ─── FieldMappingTable ────────────────────────────────────────────────────────
 
-function DropZone({
-  onDrop, draggingSrc, srcId, dragType,
+function FieldMappingTable({
+  selectedFields, sourceFields, destFields, mapping, onMap, onUnmap, onRefreshDestFields,
 }: {
-  onDrop:       (destId: string) => void
-  draggingSrc:  React.MutableRefObject<string | null>
-  srcId:        string
-  dragType:     string
+  selectedFields:       string[]
+  sourceFields:         PBFieldConfig[]
+  destFields:           PBFieldConfig[]
+  mapping:              Record<string, string>
+  onMap:                (srcId: string, destId: string) => void
+  onUnmap:              (srcId: string) => void
+  onRefreshDestFields?: () => Promise<void>
 }) {
-  const isOver = useRef(false)
+  const [refreshing, setRefreshing] = useState(false)
 
-  return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault()
-        isOver.current = true
-      }}
-      onDragLeave={() => { isOver.current = false }}
-      onDrop={(e) => {
-        e.preventDefault()
-        isOver.current = false
-        // Accept drags from the destination pool
-        const destId = e.dataTransfer.getData(`dest-${dragType}`)
-          || (window as typeof window & { _dragDestId?: string })._dragDestId
-        if (destId) {
-          onDrop(destId)
-          ;(window as typeof window & { _dragDestId?: string })._dragDestId = undefined
-        }
-      }}
-      style={{
-        minWidth: '120px',
-        minHeight: '32px',
-        border: '1.5px dashed #d4c2e8',
-        borderRadius: '8px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '4px 10px',
-        background: '#faf6ff',
-        color: '#c4afd8',
-        fontSize: '12px',
-        cursor: 'default',
-        transition: 'border-color 0.15s',
-      }}
-    >
-      Drop destination here
-    </div>
-  )
-}
+  async function handleRefresh() {
+    if (!onRefreshDestFields || refreshing) return
+    setRefreshing(true)
+    try { await onRefreshDestFields() } finally { setRefreshing(false) }
+  }
 
-// ─── Chip ─────────────────────────────────────────────────────────────────────
-
-type ChipVariant = 'mapped' | 'unmapped' | 'dest' | 'used'
-
-function Chip({
-  label, sublabel, variant, draggable, onDragStart, onDragEnd,
-}: {
-  label:       string
-  sublabel?:   string
-  variant:     ChipVariant
-  draggable?:  boolean
-  onDragStart?: () => void
-  onDragEnd?:   () => void
-}) {
-  const styles: Record<ChipVariant, React.CSSProperties> = {
-    mapped:   { background: '#EDE4F5', border: '1px solid #d4c2e8', color: '#6B2FA0' },
-    unmapped: { background: '#FFF7ED', border: '1px solid #FED7AA', color: '#C2410C' },
-    dest:     { background: '#ffffff', border: '1px solid #d4cede', color: '#1a1523' },
-    used:     { background: '#f5f5f5', border: '1px solid #e0e0e0', color: '#a0a0a0' },
+  if (destFields.length === 0) {
+    return <p style={{ color: '#8F96A7', fontSize: '13px' }}>No custom fields found in destination workspace.</p>
   }
 
   return (
-    <div
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      style={{
-        display: 'inline-flex',
-        flexDirection: 'column',
-        padding: '4px 10px',
-        borderRadius: '6px',
-        fontSize: '13px',
-        fontWeight: 500,
-        cursor: draggable ? 'grab' : 'default',
-        userSelect: 'none',
-        ...styles[variant],
-      }}
-    >
-      <span>{label}</span>
-      {sublabel && (
-        <span style={{ fontSize: '10px', opacity: 0.6, fontWeight: 400 }}>{sublabel}</span>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      {/* Column headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 20px 1fr', gap: '0 12px', paddingBottom: '4px' }}>
+        <ColHeader>Source</ColHeader>
+        <div />
+        <ColHeader>Destination</ColHeader>
+      </div>
+
+      {selectedFields.map((srcId) => {
+        const srcField    = sourceFields.find((x) => x.id === srcId)
+        const srcType     = srcField?.schema ? deriveFieldType(srcField.schema) : undefined
+        const mappedDestId = mapping[srcId]
+        const isMapped     = !!mappedDestId
+
+        // Only show dest fields of the same derived type
+        const compatibleDest = destFields.filter((d) =>
+          d.name?.trim() &&
+          (srcType === undefined || deriveFieldType(d.schema) === srcType)
+        )
+
+        // Missing values warning for select fields
+        let missingValues: string[] = []
+        if (isMapped && srcField?.schema && isSelectType(srcField.schema)) {
+          const destField = destFields.find((d) => d.id === mappedDestId)
+          if (srcField.values?.data && destField?.values?.data) {
+            const destNames = new Set(destField.values.data.map((v) => v.name.trim().toLowerCase()))
+            missingValues = srcField.values.data
+              .map((v) => v.name)
+              .filter((name) => !destNames.has(name.trim().toLowerCase()))
+          }
+        }
+
+        return (
+          <div key={srcId}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 20px 1fr',
+                gap: '0 12px',
+                alignItems: 'center',
+                padding: '8px 10px',
+                borderRadius: missingValues.length > 0 ? '8px 8px 0 0' : '8px',
+                border: `1px solid ${isMapped ? '#BFDBFE' : '#E0E2E5'}`,
+                borderBottom: missingValues.length > 0 ? 'none' : undefined,
+                background: isMapped ? '#F0F7FF' : '#FAFAFB',
+              }}
+            >
+              {/* Source label */}
+              <div>
+                <span style={{ fontSize: '13px', fontWeight: 500, color: '#000C2C' }}>
+                  {srcField?.name ?? srcId}
+                </span>
+                {srcType && (
+                  <span style={{ fontSize: '11px', color: '#8F96A7', marginLeft: '6px' }}>{srcType}</span>
+                )}
+              </div>
+
+              {/* Arrow */}
+              <svg width="16" height="10" viewBox="0 0 16 10" fill="none">
+                <path d="M0 5h12M8 1l4 4-4 4" stroke={isMapped ? '#0079F2' : '#CDCFD5'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+
+              {/* Destination dropdown — same-type only */}
+              <div style={{ position: 'relative' }}>
+                <select
+                  value={mappedDestId ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === '') {
+                      onUnmap(srcId)
+                    } else {
+                      onMap(srcId, val)
+                      // Auto-refresh dest field values in the background so the
+                      // missing values warning reflects the newly selected field
+                      onRefreshDestFields?.()
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    border: `1px solid ${isMapped ? '#BFDBFE' : '#CDCFD5'}`,
+                    borderRadius: '6px',
+                    padding: '6px 28px 6px 10px',
+                    fontSize: '13px',
+                    fontWeight: isMapped ? 500 : 400,
+                    color: isMapped ? '#0079F2' : '#8F96A7',
+                    background: isMapped ? '#EFF6FF' : '#ffffff',
+                    cursor: 'pointer',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="">— not mapped —</option>
+                  {compatibleDest.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+                <svg
+                  width="10" height="6" viewBox="0 0 10 6" fill="none"
+                  style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+                >
+                  <path d="M1 1l4 4 4-4" stroke={isMapped ? '#0079F2' : '#8F96A7'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+            </div>
+
+            {/* Missing values warning */}
+            {missingValues.length > 0 && (
+              <div style={{
+                padding: '8px 12px',
+                border: '1px solid #FED7AA',
+                borderTop: '1px solid #FFEDD5',
+                borderRadius: '0 0 8px 8px',
+                background: '#FFF7ED',
+                fontSize: '12px',
+                color: '#C2410C',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: '12px',
+              }}>
+                <span>
+                  <span style={{ fontWeight: 600 }}>⚠ {missingValues.length} value{missingValues.length !== 1 ? 's' : ''} missing from destination field — add before migrating: </span>
+                  {missingValues.join(', ')}
+                </span>
+                {onRefreshDestFields && (
+                  <button
+                    type="button"
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    style={{
+                      flexShrink: 0,
+                      background: 'none',
+                      border: '1px solid #FED7AA',
+                      borderRadius: '6px',
+                      padding: '2px 10px',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      color: '#C2410C',
+                      cursor: refreshing ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      minWidth: '100px',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {refreshing ? (
+                      <>
+                        <svg
+                          width="11" height="11" viewBox="0 0 11 11" fill="none"
+                          style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }}
+                        >
+                          <circle cx="5.5" cy="5.5" r="4.5" stroke="#C2410C" strokeWidth="1.5" strokeOpacity="0.3"/>
+                          <path d="M5.5 1C3.015 1 1 3.015 1 5.5" stroke="#C2410C" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                        Checking…
+                      </>
+                    ) : (
+                      <>↺ Check again</>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -352,10 +484,9 @@ function ColHeader({ children }: { children: React.ReactNode }) {
     <div style={{
       fontSize: '11px',
       fontWeight: 600,
-      color: '#a89bb8',
+      color: '#8F96A7',
       textTransform: 'uppercase',
       letterSpacing: '0.05em',
-      paddingBottom: '10px',
     }}>
       {children}
     </div>
@@ -370,10 +501,10 @@ function SectionHeader({ title, subtitle, unmapped, total }: {
 }) {
   const allMapped = unmapped === 0
   return (
-    <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+    <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
       <div>
-        <h3 style={{ fontSize: '13px', fontWeight: 600, color: '#1a1523', margin: '0 0 3px' }}>{title}</h3>
-        <p style={{ fontSize: '12px', color: '#a89bb8', margin: 0 }}>{subtitle}</p>
+        <h3 style={{ fontSize: '13px', fontWeight: 600, color: '#000C2C', margin: '0 0 3px' }}>{title}</h3>
+        <p style={{ fontSize: '12px', color: '#8F96A7', margin: 0 }}>{subtitle}</p>
       </div>
       <div style={{
         flexShrink: 0,
@@ -391,12 +522,92 @@ function SectionHeader({ title, subtitle, unmapped, total }: {
 }
 
 function Divider() {
-  return <div style={{ height: '1px', background: '#f0edf5', margin: '0 -24px' }} />
+  return <div style={{ height: '1px', background: '#F0F2F5', margin: '0 -24px' }} />
+}
+
+// ─── JiraFieldPicker ──────────────────────────────────────────────────────────
+
+function JiraFieldPicker({ integrationName, destFields, value, onChange }: {
+  integrationName: string
+  destFields:      PBFieldConfig[]
+  value:           string | null
+  onChange:        (id: string | null) => void
+}) {
+  // Only offer text-type fields as valid targets
+  const textFields = destFields.filter((f) =>
+    f.schema?.type === 'text' || f.schema?.type === 'string' || f.schema?.type === 'textarea'
+  )
+
+  if (textFields.length === 0) {
+    return (
+      <p style={{ fontSize: '13px', color: '#8F96A7' }}>
+        No text fields found in the destination workspace. Create one first, then re-connect.
+      </p>
+    )
+  }
+
+  const isMapped = !!value
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '1fr 20px 1fr',
+      gap: '0 12px',
+      alignItems: 'center',
+      padding: '8px 10px',
+      borderRadius: '8px',
+      border: `1px solid ${isMapped ? '#BFDBFE' : '#E0E2E5'}`,
+      background: isMapped ? '#F0F7FF' : '#FAFAFB',
+    }}>
+      {/* Source label — integration name */}
+      <div>
+        <span style={{ fontSize: '13px', fontWeight: 500, color: '#000C2C' }}>{integrationName}</span>
+        <span style={{ fontSize: '11px', color: '#8F96A7', marginLeft: '6px' }}>issue key</span>
+      </div>
+
+      {/* Arrow */}
+      <svg width="16" height="10" viewBox="0 0 16 10" fill="none">
+        <path d="M0 5h12M8 1l4 4-4 4" stroke={isMapped ? '#0079F2' : '#CDCFD5'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+
+      {/* Destination dropdown — text fields only */}
+      <div style={{ position: 'relative' }}>
+        <select
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value || null)}
+          style={{
+            width: '100%',
+            appearance: 'none',
+            WebkitAppearance: 'none',
+            border: `1px solid ${isMapped ? '#BFDBFE' : '#CDCFD5'}`,
+            borderRadius: '6px',
+            padding: '6px 28px 6px 10px',
+            fontSize: '13px',
+            fontWeight: isMapped ? 500 : 400,
+            color: isMapped ? '#0079F2' : '#8F96A7',
+            background: isMapped ? '#EFF6FF' : '#ffffff',
+            cursor: 'pointer',
+            outline: 'none',
+          }}
+        >
+          <option value="">— not mapped —</option>
+          {textFields.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+        <svg
+          width="10" height="6" viewBox="0 0 10 6" fill="none"
+          style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+        >
+          <path d="M1 1l4 4 4-4" stroke={isMapped ? '#0079F2' : '#8F96A7'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+    </div>
+  )
 }
 
 // ─── Auto-map helper (exported for use in page.tsx) ───────────────────────────
 
-/** Pre-populate mappings where source and destination names match exactly (case-insensitive). */
 export function autoMap(
   selectedStatuses: string[],
   selectedFields:   string[],
@@ -415,7 +626,11 @@ export function autoMap(
   for (const srcId of selectedFields) {
     const src  = sourceFields.find((f) => f.id === srcId)
     if (!src) continue
-    const dest = destFields.find((d) => d.name.toLowerCase() === src.name.toLowerCase())
+    const srcType = deriveFieldType(src.schema)
+    const dest = destFields.find((d) =>
+      d.name.toLowerCase() === src.name.toLowerCase() &&
+      deriveFieldType(d.schema) === srcType
+    )
     if (dest) fieldMapping[srcId] = dest.id
   }
 

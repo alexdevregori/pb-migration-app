@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ProductboardClient } from '@/lib/productboard/client'
-import type { PBEntityConfig, PBReleaseGroup, WorkspaceInfo } from '@/lib/productboard/types'
+import type { PBEntityConfig, PBJiraIntegration, PBReleaseGroup, WorkspaceIdentity, WorkspaceInfo } from '@/lib/productboard/types'
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+async function fetchCurrentUser(client: ProductboardClient): Promise<WorkspaceIdentity | undefined> {
+  try {
+    const res = await client.request<{ data: { name: string; email: string } }>('/v1/me')
+    return { name: res.data.name, email: res.data.email }
+  } catch {
+    return undefined
+  }
+}
 
 async function fetchWorkspaceConfig(client: ProductboardClient) {
   const config = await client.request<{ data: PBEntityConfig }>(
@@ -44,18 +53,34 @@ export async function GET(request: NextRequest) {
       { statuses, customFields },
       { statuses: destStatuses, customFields: destCustomFields },
       releaseGroups,
+      rawProducts,
+      rawJiraIntegrations,
+      sourceUser,
+      destUser,
     ] = await Promise.all([
       fetchWorkspaceConfig(source),
       fetchWorkspaceConfig(dest),
       source.paginate<PBReleaseGroup>('/v2/entities?type[]=releaseGroup'),
+      source.paginate<{ id: string; fields: { name: string } }>('/v2/entities?type[]=product&archived=false'),
+      source.paginate<PBJiraIntegration>('/v2/jira-integrations').catch(() => [] as PBJiraIntegration[]),
+      fetchCurrentUser(source),
+      fetchCurrentUser(dest),
     ])
 
     const info: WorkspaceInfo = {
       statuses,
-      customFields,
+      products: rawProducts.map((p) => ({ id: p.id, name: String(p.fields.name) })),
       releaseGroups,
+      customFields,
       destStatuses,
       destCustomFields,
+      jiraIntegrations: rawJiraIntegrations.map((j) => ({
+        id: j.id,
+        name: j.fields.name,
+        status: j.fields.integrationStatus,
+      })),
+      sourceUser,
+      destUser,
     }
 
     return NextResponse.json(info)

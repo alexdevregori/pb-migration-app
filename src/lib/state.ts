@@ -5,13 +5,15 @@ import type { MigrationConfig, MigrationState, StepName } from './productboard/t
 export const STATE_FILE_PATH = path.join(process.cwd(), 'migration-state.json')
 
 const STEP_NAMES: StepName[] = [
+  'discovery',
   'migrationProduct',
   'products',
   'components',
-  'features',
-  'subfeatures',
   'releaseGroups',
   'releases',
+  'features',
+  'subfeatures',
+  'dependencies',
   'discoverNotes',
   'companies',
   'users',
@@ -49,5 +51,13 @@ export async function loadState(): Promise<MigrationState | null> {
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw err
+  }
+}
+
+export async function clearState(): Promise<void> {
+  try {
+    await fs.unlink(STATE_FILE_PATH)
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
   }
 }

@@ -1,45 +1,38 @@
 'use client'
 
-import type { PBReleaseGroup } from '@/lib/productboard/types'
-
 interface Props {
-  releaseGroups: PBReleaseGroup[]
+  products: { id: string; name: string }[]
   selected: string[]
   onChange: (selected: string[]) => void
 }
 
-export function ReleaseGroupSelector({ releaseGroups, selected, onChange }: Props) {
+export function ProductSelector({ products, selected, onChange }: Props) {
   function toggle(id: string) {
-    onChange(
-      selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]
-    )
+    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id])
   }
 
-  function selectAll() { onChange(releaseGroups.map((rg) => rg.id)) }
+  function selectAll()  { onChange(products.map((p) => p.id)) }
   function selectNone() { onChange([]) }
-
-  const sorted = [...releaseGroups].sort((a, b) =>
-    a.fields.name.localeCompare(b.fields.name)
-  )
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
         <div>
-          <h3 style={sectionTitleStyle}>Release groups</h3>
-          <p style={sectionSubtitleStyle}>Only releases from selected groups will be migrated.</p>
+          <h3 style={sectionTitleStyle}>Products</h3>
+          <p style={sectionSubtitleStyle}>Only features under selected products will be migrated.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <QuickLink onClick={selectAll}>All</QuickLink>
           <QuickLink onClick={selectNone}>None</QuickLink>
         </div>
       </div>
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        {sorted.map((rg) => {
-          const checked = selected.includes(rg.id)
+        {[...products].sort((a, b) => a.name.localeCompare(b.name)).map((product) => {
+          const checked = selected.includes(product.id)
           return (
             <label
-              key={rg.id}
+              key={product.id}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -52,13 +45,13 @@ export function ReleaseGroupSelector({ releaseGroups, selected, onChange }: Prop
                 transition: 'all 0.15s',
               }}
             >
-              <Checkbox checked={checked} onChange={() => toggle(rg.id)} />
-              <span style={{ fontSize: '13px', color: '#000C2C', fontWeight: 500 }}>{rg.fields.name}</span>
+              <Checkbox checked={checked} onChange={() => toggle(product.id)} />
+              <span style={{ fontSize: '13px', color: '#000C2C', fontWeight: 500 }}>{product.name}</span>
             </label>
           )
         })}
-        {releaseGroups.length === 0 && (
-          <p style={{ color: '#8F96A7', fontSize: '13px' }}>No release groups found in this workspace.</p>
+        {products.length === 0 && (
+          <p style={{ color: '#8F96A7', fontSize: '13px' }}>No products found in this workspace.</p>
         )}
       </div>
     </div>
