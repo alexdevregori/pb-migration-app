@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
       releaseGroups,
       rawProducts,
       rawJiraIntegrations,
+      rawSourceMembers,
       sourceUser,
       destUser,
     ] = await Promise.all([
@@ -63,9 +64,14 @@ export async function GET(request: NextRequest) {
       source.paginate<PBReleaseGroup>('/v2/entities?type[]=releaseGroup'),
       source.paginate<{ id: string; fields: { name: string } }>('/v2/entities?type[]=product&archived=false'),
       source.paginate<PBJiraIntegration>('/v2/jira-integrations').catch(() => [] as PBJiraIntegration[]),
+      source.paginate<{ id: string; fields: { email?: string; name?: string } }>('/v2/members').catch(() => []),
       fetchCurrentUser(source),
       fetchCurrentUser(dest),
     ])
+
+    const sourceMembers = rawSourceMembers
+      .filter((m) => m.fields?.email)
+      .map((m) => ({ email: m.fields.email!, name: m.fields.name ?? m.fields.email! }))
 
     const info: WorkspaceInfo = {
       statuses,
@@ -74,6 +80,7 @@ export async function GET(request: NextRequest) {
       customFields,
       destStatuses,
       destCustomFields,
+      sourceMembers,
       jiraIntegrations: rawJiraIntegrations.map((j) => ({
         id: j.id,
         name: j.fields.name,

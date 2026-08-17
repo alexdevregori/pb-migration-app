@@ -71,12 +71,21 @@ export async function discoverAll(
 
   emit({ step: 'discovery', status: 'in_progress', message: 'Fetching entities…' })
 
-  const statusFilter = { statuses: selectedStatuses.map((name) => ({ name })) }
+  const selectedOwnerEmails = state.config.selectedOwnerEmails ?? []
+
+  // Build a filter body using the current /v2/entities/search schema:
+  // filters go under data.filter, with type[], fields.archived, fields.status[], fields.owner[]
+  function buildSearchBody(types: string[]): Record<string, unknown> {
+    const fields: Record<string, unknown> = { archived: false }
+    if (selectedStatuses.length > 0) fields.status = selectedStatuses.map((name) => ({ name }))
+    if (selectedOwnerEmails.length > 0) fields.owner = selectedOwnerEmails.map((email) => ({ email }))
+    return { data: { filter: { type: types, fields } } }
+  }
 
   // Fetch everything in parallel — no BFS, no sequential waterfall
   const [rawFeatures, rawSubfeatures, allProducts, allComponents] = await Promise.all([
-    fetchBySearch(source, { data: { types: ['feature'],    archived: false, ...statusFilter } }),
-    fetchBySearch(source, { data: { types: ['subfeature'], archived: false, ...statusFilter } }),
+    fetchBySearch(source, buildSearchBody(['feature'])),
+    fetchBySearch(source, buildSearchBody(['subfeature'])),
     source.paginate<PBEntity>('/v2/entities?type[]=product&archived=false'),
     source.paginate<PBEntity>('/v2/entities?type[]=component&archived=false'),
   ])

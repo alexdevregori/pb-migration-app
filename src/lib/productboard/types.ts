@@ -170,6 +170,8 @@ export interface MigrationConfig {
   includeProcessedOrphanNotes?: boolean
   processedOrphanNotesMaxAgeDays?: number | null
   appendSourceOwnerOnUnassigned?: boolean
+  // Owner email filter — only features/subfeatures owned by these users are migrated (default: all)
+  selectedOwnerEmails?: string[]
 }
 
 export interface MigrationState {
@@ -232,6 +234,8 @@ export interface WorkspaceInfo {
   destCustomFields: PBFieldConfig[]
   // Jira integrations found in the source workspace
   jiraIntegrations?: Array<{ id: string; name: string; status: string }>
+  // Members in the source workspace (for owner filtering)
+  sourceMembers?: { email: string; name: string }[]
   // Identity (fetched from /v1/me — may be absent if the endpoint isn't available)
   sourceUser?: WorkspaceIdentity
   destUser?: WorkspaceIdentity

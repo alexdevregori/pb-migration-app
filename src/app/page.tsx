@@ -13,6 +13,7 @@ import { JiraIntegrationSelector } from '@/components/JiraIntegrationSelector'
 import { SourceIdSelector } from '@/components/SourceIdSelector'
 import type { NoteFilterConfig } from '@/components/NoteFilterSelector'
 import { ProductSelector } from '@/components/ProductSelector'
+import { OwnerSelector } from '@/components/OwnerSelector'
 import { FeatureFieldSelector, ALL_FEATURE_FIELDS } from '@/components/FeatureFieldSelector'
 import type { ProgressEvent, StepStatus, StepName, MigrationError } from '@/lib/productboard/types'
 import { LogDrawer } from '@/components/LogDrawer'
@@ -44,6 +45,7 @@ export default function Home() {
   const [destKey, setDestKey] = useState('')
   const { workspaceInfo, setWorkspaceInfo } = useWorkspace()
 
+  const [selectedOwnerEmails, setSelectedOwnerEmails] = useState<string[]>([])
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [selectedReleaseGroups, setSelectedReleaseGroups] = useState<string[]>([])
@@ -197,6 +199,7 @@ export default function Home() {
     setSourceKey('')
     setDestKey('')
     setWorkspaceInfo(null)
+    setSelectedOwnerEmails([])
     setSelectedStatuses([])
     setSelectedProducts([])
     setSelectedReleaseGroups([])
@@ -259,6 +262,7 @@ export default function Home() {
           destinationApiKey:             destKey,
           selectedStatuses,
           selectedProducts,
+          selectedOwnerEmails,
           selectedReleaseGroups,
           selectedFields,
           selectedFeatureFields,
@@ -326,6 +330,12 @@ export default function Home() {
                 products={workspaceInfo.products}
                 selected={selectedProducts}
                 onChange={setSelectedProducts}
+              />
+              <Divider />
+              <OwnerSelector
+                members={workspaceInfo.sourceMembers ?? []}
+                selected={selectedOwnerEmails}
+                onChange={setSelectedOwnerEmails}
               />
               <Divider />
               <StatusSelector
